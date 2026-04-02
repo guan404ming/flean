@@ -1,4 +1,8 @@
 import Flean.Core.Format
+import Mathlib.Data.Real.Basic
+import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.Ring
+import Mathlib.Tactic.Zify
 
 /-!
 # Flean.Binary.Defs
@@ -15,8 +19,8 @@ structure BinarySpec where
   expWidth : Nat
   /-- Width of the trailing significand field in bits (excludes implicit bit). -/
   sigWidth : Nat
-  /-- Exponent width must be positive. -/
-  hExp : expWidth ≥ 1
+  /-- Exponent width must be at least 2 for IEEE 754 compatibility. -/
+  hExp : expWidth ≥ 2
   /-- Significand width must be positive. -/
   hSig : sigWidth ≥ 1
 
@@ -89,5 +93,56 @@ def FloatBits.classify {spec : BinarySpec} (f : FloatBits spec) : FloatClass :=
     if f.sigField == 0 then .zero else .subnormal
   else
     .normal
+
+/-- Pack a triple into bits. -/
+def FloatBits.fromFields {spec : BinarySpec} (s : BitVec 1) (e : BitVec spec.expWidth) (m : BitVec spec.sigWidth) : FloatBits spec where
+  bits := s ++ e ++ m
+
+/-- Get the sign as a Flean.Sign. -/
+def FloatBits.sign {spec : BinarySpec} (f : FloatBits spec) : Sign :=
+  if f.signBit == 0 then .pos else .neg
+
+/-- Convert a specification to its corresponding core format. -/
+def BinarySpec.toFormat (spec : BinarySpec) : FloatFormat where
+  β := 2
+  prec := spec.sigWidth + 1
+  emin := 1 - (spec.bias : Int)
+  emax := (spec.bias : Int)
+  hβ := by omega
+  hprec := by omega
+  hexp := by
+    unfold bias
+    let w := spec.expWidth
+    have h_w_ge_2 : w ≥ 2 := spec.hExp
+    have h_pow_ge_2 : 2 ≤ 2 ^ (w - 1) := by
+      have : 1 ≤ w - 1 := Nat.le_sub_one_of_lt h_w_ge_2
+      exact Nat.pow_le_pow_right (by omega) this
+    -- Use zify to move the proof to Int
+    zify [h_pow_ge_2]
+    linarith
+
+/-- Decode a finite floating-point bit pattern into (sign, biased_exp, significand). -/
+def FloatBits.toRepr {spec : BinarySpec} (f : FloatBits spec) : FloatRepr spec.toFormat where
+  sign := f.sign
+  exponent := f.expField.toNat
+  significand :=
+    if f.isExpZero then
+      f.sigField.toNat
+    else
+      f.sigField.toNat + 2^spec.sigWidth
+
+/-- The value of a floating-point number as a real number (for finite values). -/
+noncomputable def FloatBits.toReal {spec : BinarySpec} (f : FloatBits spec) : ℝ :=
+  match f.classify with
+  | .zero => 0
+  | .infinite => 0
+  | .nan => 0
+  | .normal | .subnormal =>
+      let repr := f.toRepr
+      let s := repr.sign.toInt
+      let e := (repr.exponent : Int) - (spec.bias : Int)
+      let m := (repr.significand : Int)
+      let p := (spec.sigWidth : Int)
+      (s : ℝ) * (m : ℝ) * (2 : ℝ) ^ (e - p)
 
 end Flean
