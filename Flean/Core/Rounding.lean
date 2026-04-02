@@ -26,7 +26,7 @@ inductive RoundingMode where
 def isRepresentable (fmt : FloatFormat) (x : ℝ) : Prop :=
   ∃ (m : ℤ) (e : ℤ),
     x = (m : ℝ) * (fmt.β : ℝ) ^ (e : ℤ) ∧
-    Int.natAbs m < fmt.β ^ fmt.prec ∧
+    |m| < (fmt.β ^ fmt.prec : ℤ) ∧
     fmt.emin ≤ e
 
 /-- Machine epsilon: β^(1-p), the relative spacing at 1. -/
