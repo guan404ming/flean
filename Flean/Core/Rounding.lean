@@ -51,5 +51,7 @@ structure RoundingFn (fmt : FloatFormat) where
   idempotent : ∀ (x : ℝ), round (round x) = round x
   /-- Rounding is monotone. -/
   monotone : Monotone round
+  /-- Rounding preserves sign: R(-x) = -R(x). -/
+  sign_preservation : ∀ (x : ℝ), round (-x) = -round x
 
 end Flean
