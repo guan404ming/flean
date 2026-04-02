@@ -164,15 +164,144 @@ theorem roundTZ_le_abs (fmt : FloatFormat) (x : ℝ) :
         rw [abs_div, abs_of_pos (bpow_pos fmt e)]
     _ = |x| := div_mul_cancel₀ |x| (bpow_ne_zero fmt e)
 
+/-- The canonical exponent is bounded by any valid exponent of a representation. -/
+theorem cexp_le_of_repr (fmt : FloatFormat) {m : ℤ} {e : ℤ}
+    (hm_ne : m ≠ 0) (hm : |m| < (fmt.β ^ fmt.prec : ℤ)) (he : fmt.emin ≤ e) :
+    cexp fmt ((m : ℝ) * (fmt.β : ℝ) ^ e) ≤ e := by
+  have hx_ne : (m : ℝ) * (fmt.β : ℝ) ^ e ≠ 0 :=
+    mul_ne_zero (Int.cast_ne_zero.mpr hm_ne) (zpow_ne_zero _ fmt.β_ne_zero)
+  unfold cexp; rw [if_neg hx_ne]
+  -- Goal: max emin (⌊log|m*β^e| / logβ⌋ - p + 1) ≤ e
+  refine max_le he ?_
+  have hlogβ : 0 < Real.log (fmt.β : ℝ) := Real.log_pos fmt.β_one_lt
+  have hx_pos : 0 < |(m : ℝ) * (fmt.β : ℝ) ^ e| := abs_pos.mpr hx_ne
+  -- |m * β^e| < β^(e+p)
+  have hx_lt : |(m : ℝ) * (fmt.β : ℝ) ^ e| < (fmt.β : ℝ) ^ ((e : ℤ) + ↑fmt.prec) := by
+    rw [abs_mul, abs_of_pos (zpow_pos fmt.β_pos e)]
+    calc |(m : ℝ)| * (fmt.β : ℝ) ^ e
+        < (fmt.β : ℝ) ^ (fmt.prec : ℤ) * (fmt.β : ℝ) ^ e := by
+          exact mul_lt_mul_of_pos_right (by exact_mod_cast hm) (zpow_pos fmt.β_pos e)
+      _ = (fmt.β : ℝ) ^ ((e : ℤ) + ↑fmt.prec) := by
+          rw [mul_comm, ← zpow_add₀ fmt.β_ne_zero]
+  -- log|x| / logβ < e + p
+  have h_logb : Real.log |(m : ℝ) * (fmt.β : ℝ) ^ e| / Real.log ↑fmt.β <
+      (e : ℝ) + (fmt.prec : ℝ) := by
+    rw [div_lt_iff₀ hlogβ]
+    calc Real.log |(m : ℝ) * (fmt.β : ℝ) ^ e|
+        < Real.log ((fmt.β : ℝ) ^ ((e : ℤ) + ↑fmt.prec)) := Real.log_lt_log hx_pos hx_lt
+      _ = ((e : ℝ) + ↑fmt.prec) * Real.log ↑fmt.β := by rw [Real.log_zpow]; push_cast; ring
+  -- ⌊log|x| / logβ⌋ < e + p, so ⌊...⌋ - p + 1 ≤ e
+  have : ⌊Real.log |(m : ℝ) * (fmt.β : ℝ) ^ e| / Real.log ↑fmt.β⌋ < e + ↑fmt.prec :=
+    Int.floor_lt.mpr (by exact_mod_cast h_logb)
+  omega
+
+/-- Representable numbers are fixed points of roundTZ. -/
+theorem roundTZ_repr_fixed (fmt : FloatFormat) {x : ℝ}
+    (hx : isRepresentable fmt x) : roundTZ fmt x = x := by
+  obtain ⟨m, e, hval, hm, he⟩ := hx
+  by_cases hm_ne : m = 0
+  · subst hm_ne; simp at hval; rw [hval]; exact roundTZ_zero fmt
+  · rw [hval]; unfold roundTZ; dsimp only
+    have hce_le : cexp fmt ((m : ℝ) * (fmt.β : ℝ) ^ e) ≤ e :=
+      cexp_le_of_repr fmt hm_ne hm he
+    set ce := cexp fmt ((m : ℝ) * (fmt.β : ℝ) ^ e) with hce_def
+    -- The division yields an integer
+    have ⟨n, hn⟩ : ∃ (n : ℤ),
+        (m : ℝ) * (fmt.β : ℝ) ^ e / bpow fmt ce = (n : ℝ) := by
+      refine ⟨m * ↑(fmt.β ^ (e - ce).toNat), ?_⟩
+      unfold bpow; push_cast
+      rw [mul_div_assoc, ← zpow_sub₀ fmt.β_ne_zero, ← zpow_natCast]
+      congr 2
+      exact (Int.toNat_of_nonneg (by omega)).symm
+    conv_lhs => rw [show (m : ℝ) * (fmt.β : ℝ) ^ e / bpow fmt ce = (n : ℝ) from hn]
+    rw [ztrunc_intCast]
+    rw [show (n : ℝ) = (m : ℝ) * (fmt.β : ℝ) ^ e / bpow fmt ce from hn.symm]
+    exact div_mul_cancel₀ _ (bpow_ne_zero fmt ce)
+
 theorem roundTZ_idempotent (fmt : FloatFormat) (x : ℝ) :
-    roundTZ fmt (roundTZ fmt x) = roundTZ fmt x := by
-  sorry
+    roundTZ fmt (roundTZ fmt x) = roundTZ fmt x :=
+  roundTZ_repr_fixed fmt (roundTZ_isRepresentable fmt x)
+
+/-- ztrunc preserves sign: non-negative input gives non-negative output. -/
+theorem ztrunc_nonneg {y : ℝ} (hy : 0 ≤ y) : (0 : ℤ) ≤ ztrunc y := by
+  unfold ztrunc; rw [if_pos hy]; exact Int.floor_nonneg.mpr hy
+
+/-- ztrunc preserves sign: non-positive input gives non-positive output. -/
+theorem ztrunc_nonpos {y : ℝ} (hy : y ≤ 0) : ztrunc y ≤ 0 := by
+  unfold ztrunc
+  by_cases h : y ≥ 0
+  · have : y = 0 := le_antisymm hy h
+    rw [if_pos h, this]; simp
+  · rw [if_neg h]; exact Int.ceil_le.mpr (by exact_mod_cast hy)
+
+/-- roundTZ preserves non-negativity. -/
+theorem roundTZ_nonneg (fmt : FloatFormat) {x : ℝ} (hx : 0 ≤ x) :
+    0 ≤ roundTZ fmt x := by
+  unfold roundTZ; dsimp only
+  exact mul_nonneg (by exact_mod_cast ztrunc_nonneg (div_nonneg hx (le_of_lt (bpow_pos fmt _))))
+    (le_of_lt (bpow_pos fmt _))
+
+/-- roundTZ preserves non-positivity. -/
+theorem roundTZ_nonpos (fmt : FloatFormat) {x : ℝ} (hx : x ≤ 0) :
+    roundTZ fmt x ≤ 0 := by
+  unfold roundTZ; dsimp only
+  exact mul_nonpos_of_nonpos_of_nonneg
+    (by exact_mod_cast ztrunc_nonpos (div_nonpos_of_nonpos_of_nonneg hx (le_of_lt (bpow_pos fmt _))))
+    (le_of_lt (bpow_pos fmt _))
+
+/-- Truncation error is less than one unit. -/
+theorem ztrunc_sub_lt_one (y : ℝ) : |(ztrunc y : ℝ) - y| < 1 := by
+  unfold ztrunc
+  split_ifs with hy
+  · rw [abs_of_nonpos (by linarith [Int.floor_le y])]
+    linarith [Int.lt_floor_add_one y]
+  · rw [abs_of_nonneg (by linarith [Int.le_ceil y])]
+    linarith [Int.ceil_lt_add_one y]
+
+/-- Absolute error: |roundTZ(x) - x| < β^(cexp x). -/
+theorem roundTZ_error_abs (fmt : FloatFormat) (x : ℝ) :
+    |roundTZ fmt x - x| < bpow fmt (cexp fmt x) := by
+  unfold roundTZ; dsimp only
+  set e := cexp fmt x
+  have he := bpow_pos fmt e
+  have h1 : (ztrunc (x / bpow fmt e) : ℝ) * bpow fmt e - x =
+      ((ztrunc (x / bpow fmt e) : ℝ) - x / bpow fmt e) * bpow fmt e := by
+    rw [sub_mul, div_mul_cancel₀ x (bpow_ne_zero fmt e)]
+  rw [h1, abs_mul, abs_of_pos he]
+  calc |(ztrunc (x / bpow fmt e) : ℝ) - x / bpow fmt e| * bpow fmt e
+      < 1 * bpow fmt e := mul_lt_mul_of_pos_right (ztrunc_sub_lt_one _) he
+    _ = bpow fmt e := one_mul _
 
 theorem roundTZ_monotone (fmt : FloatFormat) : Monotone (roundTZ fmt) := by
-  sorry
+  intro x y hxy
+  by_cases hx : 0 ≤ x
+  · -- 0 ≤ x ≤ y: both non-negative
+    have hy : 0 ≤ y := le_trans hx hxy
+    have hrx := roundTZ_nonneg fmt hx
+    have hle := (roundTZ_le_abs fmt x)
+    rw [abs_of_nonneg hx] at hle
+    -- roundTZ(x) is representable and 0 ≤ roundTZ(x) ≤ x ≤ y
+    -- roundTZ(y) is the largest representable ≤ y, so roundTZ(x) ≤ roundTZ(y)
+    sorry
+  · by_cases hy : y ≤ 0
+    · -- x ≤ y ≤ 0: use negation symmetry
+      sorry
+    · -- x < 0 < y: roundTZ(x) ≤ 0 ≤ roundTZ(y)
+      exact le_trans (roundTZ_nonpos fmt (le_of_not_ge hx))
+        (roundTZ_nonneg fmt (not_le.mp hy).le)
 
-theorem roundTZ_error (fmt : FloatFormat) {x : ℝ} (hx : x ≠ 0) :
+/-- Relative error for normal-range values.
+    |roundTZ(x) - x| ≤ ε * |x| when |x| ≥ β^(emin + p - 1). -/
+theorem roundTZ_error (fmt : FloatFormat) {x : ℝ}
+    (hx : (fmt.β : ℝ) ^ (fmt.emin + (fmt.prec : ℤ) - 1) ≤ |x|) :
     |roundTZ fmt x - x| ≤ machineEpsilon fmt * |x| := by
+  have hx_ne : x ≠ 0 := by
+    intro h; subst h; simp at hx
+    exact not_le.mpr (zpow_pos fmt.β_pos _) hx
+  -- |roundTZ(x) - x| < β^(cexp x) ≤ ε * |x|
+  have h1 := roundTZ_error_abs fmt x
+  -- Key: cexp(x) = ⌊log_β|x|⌋ - p + 1 (not clamped to emin)
+  -- So β^(cexp x) ≤ β^(log_β|x| - p + 1) = |x| * β^(1-p) = ε * |x|
   sorry
 
 noncomputable def roundTowardZeroFn (fmt : FloatFormat) : RoundingFn fmt where
