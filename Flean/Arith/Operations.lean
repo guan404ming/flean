@@ -73,7 +73,7 @@ def FloatBits.addFiniteSameSign {spec : BinarySpec} (f1 f2 : FloatBits spec) (mo
     OpResult (FloatBits spec) :=
   let (m1, e1) := f1.getExtendedSignificand
   let (m2, e2) := f2.getExtendedSignificand
-  let p := spec.sigWidth
+  let _p := spec.sigWidth
   let diff := e1 - e2
   let m1_ext := m1.toNat <<< 2
   let m2_ext := m2.toNat <<< 2
@@ -167,9 +167,5 @@ def FloatBits.scaleB {spec : BinarySpec} (f : FloatBits spec) (N : Int) :
   | .normal | .subnormal =>
     let (m, e) := f.getExtendedSignificand
     roundAndPack .roundTowardZero f.isNeg ((e : Int) + N) m.toNat
-
--- TODO: Correctness proofs for arithmetic operations require careful
--- alignment between toReal (which uses exponent 0 for subnormals) and
--- getExtendedSignificand (which uses exponent 1 for subnormals).
 
 end Flean

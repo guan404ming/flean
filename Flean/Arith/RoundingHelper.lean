@@ -14,7 +14,7 @@ and handles gradual underflow (subnormals) and overflow.
 namespace Flean
 
 /-- Rounding decision for an intermediate result. -/
-def roundDecision (mode : RoundingMode) (isNeg : Bool) (m : Nat) (lsb g r s : Bool) : Bool :=
+def roundDecision (mode : RoundingMode) (isNeg : Bool) (_m : Nat) (lsb g r s : Bool) : Bool :=
   let grs := g || r || s
   match mode with
   | .roundTowardZero => false
@@ -71,7 +71,7 @@ def roundAndPack {spec : BinarySpec} (mode : RoundingMode) (isNeg : Bool)
   if finalExp ≥ maxExp then
     let overflowResult := 
       match mode with
-      | .roundTowardZero => FloatBits.maxFinite spec -- Placeholder for max finite
+      | .roundTowardZero => FloatBits.maxFinite spec
       | .roundTowardPositive => if !isNeg then FloatBits.posInf spec else FloatBits.maxFinite spec
       | .roundTowardNegative => if isNeg then FloatBits.negInf spec else FloatBits.maxFinite spec
       | _ => if isNeg then FloatBits.negInf spec else FloatBits.posInf spec

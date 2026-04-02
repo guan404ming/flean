@@ -140,10 +140,12 @@ def BinarySpec.toFormat (spec : BinarySpec) : FloatFormat where
         _ ≤ 2 ^ (spec.expWidth - 1) := Nat.pow_le_pow_right (by omega : 0 < 2) he
     exact_mod_cast show 1 ≤ spec.bias from by unfold bias; omega
 
-/-- Decode a finite floating-point bit pattern into (sign, biased_exp, significand). -/
+/-- Decode a finite floating-point bit pattern into (sign, biased_exp, significand).
+    For subnormals, IEEE 754 uses the minimum exponent (biased value 1),
+    not the encoded exponent field value 0. -/
 def FloatBits.toRepr {spec : BinarySpec} (f : FloatBits spec) : FloatRepr spec.toFormat where
   sign := f.sign
-  exponent := f.expField.toNat
+  exponent := if f.isExpZero then 1 else f.expField.toNat
   significand :=
     if f.isExpZero then
       f.sigField.toNat

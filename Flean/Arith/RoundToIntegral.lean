@@ -40,7 +40,21 @@ def FloatBits.roundToIntegral {spec : BinarySpec} (f : FloatBits spec) (mode : R
         { value := if f.isNeg then FloatBits.negZero spec else FloatBits.posZero spec,
           flags := { inexact := true } }
     else
-      -- TODO: full integer rounding for mixed exponent range
-      { value := f }
+      -- -1 ≤ e_real < p: mask off fractional bits and round
+      let (m, biasedE) := f.getExtendedSignificand
+      let fracBits := (p - e_real).toNat  -- number of fractional bits
+      let intPart := m.toNat >>> fracBits
+      let fracMask := (1 <<< fracBits) - 1
+      let fracPart := m.toNat &&& fracMask
+      let lsb := intPart % 2 == 1
+      let g := if fracBits > 0 then (m.toNat >>> (fracBits - 1)) % 2 == 1 else false
+      let r := if fracBits > 1 then (m.toNat >>> (fracBits - 2)) % 2 == 1 else false
+      let s := if fracBits > 2 then (fracPart % (1 <<< (fracBits - 2))) != 0 else false
+      let roundUp := roundDecision mode f.isNeg intPart lsb g r s
+      let roundedInt := if roundUp then intPart + 1 else intPart
+      -- Pack result back: roundedInt * 2^fracBits as significand
+      let newSig := roundedInt <<< fracBits
+      let rawExp := (biasedE : Int)
+      roundAndPack mode f.isNeg rawExp newSig
 
 end Flean

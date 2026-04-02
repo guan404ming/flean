@@ -25,6 +25,4 @@ def evalFleanMixedPrecCast : Tactic := fun _ => do
   -- 3. Use bit-vector lemmas to simplify significand shifts
   evalTactic (← `(tactic| try (unfold FloatBits.cast FloatBits.getExtendedSignificand; dsimp)))
 
--- TODO: cast_widening_lossless proof requires connecting cast to toReal.
-
 end Flean

@@ -41,7 +41,7 @@ def FloatBits.fma {spec : BinarySpec} (a b c : FloatBits spec) :
     let m_c_aligned := m_c.toNat <<< (e_c - E_min).toNat
     
     -- Fused Addition/Subtraction
-    let (res_m_full, res_sign, res_inexact) := 
+    let (res_m_full, res_sign, _res_inexact) :=
       if sign_ab == c.signBit then
         (m_ab_aligned + m_c_aligned, sign_ab, false)
       else if m_ab_aligned ≥ m_c_aligned then
@@ -77,7 +77,5 @@ def FloatBits.fma {spec : BinarySpec} (a b c : FloatBits spec) :
           FloatBits.fromFields res_sign (BitVec.ofNat spec.expWidth final_e_real.toNat) (BitVec.ofNat p final_m_val)
       
       { value := res_bits, flags := if inexact then { inexact := true } else {} }
-
--- TODO: FMA correctness proof requires connecting bit-level fma to roundTZ.
 
 end Flean

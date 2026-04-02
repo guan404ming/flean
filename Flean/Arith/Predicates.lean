@@ -60,9 +60,9 @@ def FloatBits.totalOrder {spec : BinarySpec} (f1 f2 : FloatBits spec) : Bool :=
     else
       mag1 ≤ mag2 -- Positive: larger magnitude means larger value
 
--- TODO: totalOrderMag requires FloatBits.abs
--- def FloatBits.totalOrderMag {spec : BinarySpec} (f1 f2 : FloatBits spec) : Bool :=
---   f1.abs.totalOrder f2.abs
+/-- totalOrderMag: Compares absolute values using totalOrder. -/
+def FloatBits.totalOrderMag {spec : BinarySpec} (f1 f2 : FloatBits spec) : Bool :=
+  f1.abs.totalOrder f2.abs
 
 /-! ## Consistency proofs: constructors match predicates -/
 

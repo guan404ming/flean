@@ -37,7 +37,7 @@ def FloatBits.cast {srcSpec dstSpec : BinarySpec} (f : FloatBits srcSpec) (mode 
       roundAndPack mode f.isNeg rawExp scaledSig
     else
       -- Narrowing (e.g., f32 -> f16): potential precision loss/rounding
-      let shift := srcP - dstP
+      let _shift := srcP - dstP
       roundAndPack mode f.isNeg rawExp m.toNat
 
 end Flean
