@@ -34,26 +34,10 @@ def FloatBits.quietNaN (spec : BinarySpec) : FloatBits spec :=
   let qBit := 1 <<< (spec.sigWidth - 1)
   ⟨BitVec.ofNat spec.totalWidth (expAllOnes ||| qBit)⟩
 
-/-- Predicate: is this value a NaN? -/
-def FloatBits.isNaN {spec : BinarySpec} (f : FloatBits spec) : Bool :=
-  f.classify == .nan
-
-/-- Predicate: is this value an infinity? -/
-def FloatBits.isInfinite {spec : BinarySpec} (f : FloatBits spec) : Bool :=
-  f.classify == .infinite
-
-/-- Predicate: is this value a zero (pos or neg)? -/
-def FloatBits.isZero {spec : BinarySpec} (f : FloatBits spec) : Bool :=
-  f.classify == .zero
-
-/-- Predicate: is this value subnormal? -/
-def FloatBits.isSubnormal {spec : BinarySpec} (f : FloatBits spec) : Bool :=
-  f.classify == .subnormal
-
-/-- Predicate: is this value finite (not NaN or infinity)? -/
-def FloatBits.isFinite {spec : BinarySpec} (f : FloatBits spec) : Bool :=
-  match f.classify with
-  | .nan | .infinite => false
-  | _ => true
+/-- Maximum finite positive value: sign=0, exp=max-1, sig=all ones. -/
+def FloatBits.maxFinite (spec : BinarySpec) : FloatBits spec :=
+  let expMaxMinus1 := (2 ^ spec.expWidth - 2) <<< spec.sigWidth
+  let sigAllOnes := 2 ^ spec.sigWidth - 1
+  ⟨BitVec.ofNat spec.totalWidth (expMaxMinus1 ||| sigAllOnes)⟩
 
 end Flean

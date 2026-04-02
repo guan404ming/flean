@@ -102,6 +102,28 @@ def FloatBits.fromFields {spec : BinarySpec} (s : BitVec 1) (e : BitVec spec.exp
 def FloatBits.sign {spec : BinarySpec} (f : FloatBits spec) : Sign :=
   if f.signBit == 0 then .pos else .neg
 
+/-- Is the sign bit set (negative)? -/
+def FloatBits.isNeg {spec : BinarySpec} (f : FloatBits spec) : Bool :=
+  f.signBit != 0
+
+/-- Negate a FloatBits by flipping the sign bit. -/
+def FloatBits.negate {spec : BinarySpec} (f : FloatBits spec) : FloatBits spec :=
+  let mask := BitVec.ofNat spec.totalWidth (1 <<< (spec.expWidth + spec.sigWidth))
+  ⟨f.bits ^^^ mask⟩
+
+/-- Absolute value: clear the sign bit. -/
+def FloatBits.abs {spec : BinarySpec} (f : FloatBits spec) : FloatBits spec :=
+  let mask := BitVec.ofNat spec.totalWidth (1 <<< (spec.expWidth + spec.sigWidth))
+  ⟨f.bits &&& (~~~ mask)⟩
+
+/-- Extract the extended significand including the implicit bit. -/
+def FloatBits.getExtendedSignificand {spec : BinarySpec} (f : FloatBits spec) :
+    (BitVec (1 + spec.sigWidth)) × Nat :=
+  if f.isExpZero then
+    (BitVec.ofNat 1 0 ++ f.sigField, 1)
+  else
+    (BitVec.ofNat 1 1 ++ f.sigField, f.expField.toNat)
+
 /-- Convert a specification to its corresponding core format. -/
 def BinarySpec.toFormat (spec : BinarySpec) : FloatFormat where
   β := 2
@@ -111,15 +133,12 @@ def BinarySpec.toFormat (spec : BinarySpec) : FloatFormat where
   hβ := by omega
   hprec := by omega
   hexp := by
-    unfold bias
-    let w := spec.expWidth
-    have h_w_ge_2 : w ≥ 2 := spec.hExp
-    have h_pow_ge_2 : 2 ≤ 2 ^ (w - 1) := by
-      have : 1 ≤ w - 1 := Nat.le_sub_one_of_lt h_w_ge_2
-      exact Nat.pow_le_pow_right (by omega) this
-    -- Use zify to move the proof to Int
-    zify [h_pow_ge_2]
-    linarith
+    suffices h : 1 ≤ (spec.bias : Int) by linarith
+    have he : 1 ≤ spec.expWidth - 1 := by have := spec.hExp; omega
+    have hp : 2 ≤ 2 ^ (spec.expWidth - 1) :=
+      calc (2 : ℕ) = 2 ^ 1 := (pow_one 2).symm
+        _ ≤ 2 ^ (spec.expWidth - 1) := Nat.pow_le_pow_right (by omega : 0 < 2) he
+    exact_mod_cast show 1 ≤ spec.bias from by unfold bias; omega
 
 /-- Decode a finite floating-point bit pattern into (sign, biased_exp, significand). -/
 def FloatBits.toRepr {spec : BinarySpec} (f : FloatBits spec) : FloatRepr spec.toFormat where
