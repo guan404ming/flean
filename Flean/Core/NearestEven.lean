@@ -204,7 +204,7 @@ private theorem roundNearestEven_neg (x : ℝ) : roundNearestEven (-x) = -roundN
     have hceil : ⌈x⌉ = f + 1 := by
       apply le_antisymm
       · exact Int.ceil_le.mpr (by push_cast; linarith)
-      · exact Int.lt_ceil.mpr (by push_cast; linarith)
+      · exact Int.lt_ceil.mpr (by linarith)
     rw [hceil]
     have hrn : -x - (↑(-(f + 1)) : ℝ) = 1 - r := by push_cast; linarith
     rw [hrn]
@@ -214,9 +214,9 @@ private theorem roundNearestEven_neg (x : ℝ) : roundNearestEven (-x) = -roundN
     all_goals simp only [h1, h2, h3, h4, ite_true, ite_false]
     -- Close: impossible cases, direct cases, or tie-break
     all_goals first
-      | (push_cast; omega)
+      | omega
       | (exfalso; linarith)
-      | (split_ifs <;> push_cast <;> omega)
+      | (split_ifs <;> omega)
       | (simp only [BEq.beq, decide_eq_true_eq] at *; split_ifs <;> omega)
 
 theorem roundNNE_neg (fmt : FloatFormat) (x : ℝ) : roundNNE fmt (-x) = -roundNNE fmt x := by

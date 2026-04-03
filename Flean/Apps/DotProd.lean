@@ -72,7 +72,93 @@ theorem mpMul_error (a b : ℝ)
       mpMul a b = a * b * (1 + δ₁) * (1 + δ₂) * (1 + δ₃) +
         a * (roundNNE binary16 b - b) * (1 + δ₃) +
         (roundNNE binary16 a - a) * b * (1 + δ₃) := by
-  sorry
+  -- Abbreviations
+  set a' := roundNNE binary16 a
+  set b' := roundNNE binary16 b
+  set p := a' * b'
+  -- a, b are nonzero (from normal range hypotheses)
+  have ha_pos : 0 < |a| := lt_of_lt_of_le (by positivity) ha
+  have hb_pos : 0 < |b| := lt_of_lt_of_le (by positivity) hb
+  have ha_ne : a ≠ 0 := by intro h; simp [h] at ha_pos
+  have hb_ne : b ≠ 0 := by intro h; simp [h] at hb_pos
+  have hab_ne : a * b ≠ 0 := mul_ne_zero ha_ne hb_ne
+  -- Rounding errors for fp16
+  have hea : |a - a'| ≤ 1 / 2048 * |a| := f16_relative_error a ha
+  have heb : |b - b'| ≤ 1 / 2048 * |b| := f16_relative_error b hb
+  -- Product is in normal range of binary32
+  -- |a'| ≥ |a| - |a-a'| ≥ |a|(1 - 1/2048), similarly for b'
+  -- |p| = |a'|*|b'| ≥ |a|*|b|*(2047/2048)^2 ≥ 2^(-8)*(2047/2048)^2 >> 2^(-103)
+  have hp_normal : (2 : ℝ) ^ ((-126 : ℤ) + 24 - 1) ≤ |p| := by
+    have ha'_lb : 2047 / 2048 * |a| ≤ |a'| := by
+      have := abs_sub_abs_le_abs_sub a a'; linarith
+    have hb'_lb : 2047 / 2048 * |b| ≤ |b'| := by
+      have := abs_sub_abs_le_abs_sub b b'; linarith
+    rw [show p = a' * b' from rfl, abs_mul]
+    have : (2 : ℝ) ^ ((-14 : ℤ) + 11 - 1) = 2⁻¹ ^ (4 : ℕ) := by norm_num
+    have ha_lb : (1 : ℝ) / 16 ≤ |a| := by rw [this] at ha; linarith
+    have hb_lb : (1 : ℝ) / 16 ≤ |b| := by rw [this] at hb; linarith
+    have ha'_pos : 0 < |a'| := by linarith
+    have hb'_pos : 0 < |b'| := by linarith
+    calc (2 : ℝ) ^ ((-126 : ℤ) + 24 - 1)
+        ≤ (2047 / 2048 * (1 / 16)) * (2047 / 2048 * (1 / 16)) := by norm_num
+      _ ≤ |a'| * |b'| := by
+          apply mul_le_mul <;> linarith
+  -- fp32 relative error on the product
+  have hep : |p - roundNNE binary32 p| ≤ 1 / 16777216 * |p| := f32_relative_error p hp_normal
+  -- Define δ₃ via the standard model for fp32
+  have hp_ne : p ≠ 0 := by
+    intro h; rw [h, abs_zero] at hp_normal; norm_num at hp_normal
+  set δ₃ := (roundNNE binary32 p - p) / p
+  have hδ₃_eq : roundNNE binary32 p = p * (1 + δ₃) := by
+    show roundNNE binary32 p = p * (1 + (roundNNE binary32 p - p) / p)
+    field_simp [hp_ne]; ring
+  have hδ₃_bound : |δ₃| ≤ 1 / 16777216 := by
+    show |(roundNNE binary32 p - p) / p| ≤ 1 / 16777216
+    rw [abs_div]
+    rw [div_le_iff₀ (abs_pos.mpr hp_ne)]
+    rwa [abs_sub_comm] at hep
+  -- Define δ₁ = (a'-a)*(b'-b)/(a*b), δ₂ = 0
+  set e_a := a' - a
+  set e_b := b' - b
+  set δ₁ := e_a * e_b / (a * b)
+  -- Bound |δ₁|
+  have hea' : |e_a| ≤ 1 / 2048 * |a| := by rwa [show e_a = a' - a from rfl, abs_sub_comm]
+  have heb' : |e_b| ≤ 1 / 2048 * |b| := by rwa [show e_b = b' - b from rfl, abs_sub_comm]
+  have hab_pos : 0 < |a| * |b| := mul_pos ha_pos hb_pos
+  have hδ₁_bound : |δ₁| ≤ 1 / 2048 := by
+    show |e_a * e_b / (a * b)| ≤ 1 / 2048
+    rw [abs_div, abs_mul, abs_mul]
+    rw [div_le_iff₀ hab_pos]
+    calc |e_a| * |e_b|
+        ≤ (1 / 2048 * |a|) * (1 / 2048 * |b|) :=
+          mul_le_mul hea' heb' (abs_nonneg _) (by linarith)
+      _ = 1 / 2048 * (1 / 2048) * (|a| * |b|) := by ring
+      _ ≤ 1 / 2048 * 1 * (|a| * |b|) := by
+          apply mul_le_mul_of_nonneg_right _ hab_pos.le
+          apply mul_le_mul_of_nonneg_left (by norm_num : (1:ℝ)/2048 ≤ 1) (by norm_num)
+      _ = 1 / 2048 * (|a| * |b|) := by ring
+  -- The algebraic identity
+  -- mpMul a b = roundNNE binary32 p = p * (1 + δ₃) = a' * b' * (1 + δ₃)
+  -- a' * b' = (a + e_a) * (b + e_b) = a*b + a*e_b + e_a*b + e_a*e_b
+  --         = a*b*(1 + e_a*e_b/(a*b)) + a*e_b + e_a*b
+  --         = a*b*(1 + δ₁) + a*(b'-b) + (a'-a)*b
+  -- So with δ₂ = 0: a*b*(1+δ₁)*(1+0) + a*(b'-b) + (a'-a)*b = a'*b'
+  -- And mpMul a b = a'*b'*(1+δ₃) = [a*b*(1+δ₁) + a*(b'-b) + (a'-a)*b]*(1+δ₃)
+  -- Key identity: p = a*b*(1+δ₁) + a*e_b + e_a*b
+  have hδ₁_val : a * b * δ₁ = e_a * e_b := by
+    show a * b * (e_a * e_b / (a * b)) = e_a * e_b
+    field_simp [hab_ne]
+  have hp_expand : p = a * b * (1 + δ₁) + a * e_b + e_a * b := by
+    show a' * b' = a * b * (1 + δ₁) + a * e_b + e_a * b
+    have ha'_eq : a' = a + e_a := by simp [e_a]
+    have hb'_eq : b' = b + e_b := by simp [e_b]
+    rw [ha'_eq, hb'_eq]; nlinarith [hδ₁_val]
+  refine ⟨δ₁, 0, δ₃, hδ₁_bound, by simp, hδ₃_bound, ?_⟩
+  show mpMul a b = a * b * (1 + δ₁) * (1 + 0) * (1 + δ₃) +
+    a * (b' - b) * (1 + δ₃) + (a' - a) * b * (1 + δ₃)
+  have hmpMul : mpMul a b = roundNNE binary32 p := rfl
+  rw [hmpMul, hδ₃_eq]
+  linear_combination (1 + δ₃) * hp_expand
 
 /-- Simplified triangle bound for mpMul error. -/
 theorem mpMul_error_triangle (a b : ℝ) :

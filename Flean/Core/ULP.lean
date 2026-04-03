@@ -68,7 +68,7 @@ private theorem repr_diff_at_lower_exp (fmt : FloatFormat)
     x - y = ((mx * (fmt.β : ℤ) ^ (ex - ey).toNat - my : ℤ) : ℝ) * (fmt.β : ℝ) ^ ey := by
   rw [hxval, hyval]; push_cast
   rw [sub_mul, mul_assoc, ← zpow_natCast, ← zpow_add₀ (FloatFormat.β_ne_zero fmt)]
-  congr 1; rw [Int.toNat_of_nonneg (Int.sub_nonneg.mpr hle)]; ring
+  congr 1; rw [Int.toNat_of_nonneg (Int.sub_nonneg.mpr hle)]; ring_nf
 
 /-- Sterbenz lemma: if y/2 ≤ x ≤ 2y for representable x, y ≥ 0,
     then x - y is exactly representable (no rounding error). -/

@@ -203,7 +203,7 @@ theorem repr_ge_roundUP_nonneg (fmt : FloatFormat) {r y : ℝ}
   have hr_eq : r = (n : ℝ) * bpow fmt e := by
     simp only [n]; rw [hval]; unfold bpow; push_cast
     rw [mul_assoc, ← zpow_natCast, ← zpow_add₀ (FloatFormat.β_ne_zero fmt)]
-    congr 1; rw [Int.toNat_of_nonneg (Int.sub_nonneg.mpr hfe)]; ring
+    congr 1; rw [Int.toNat_of_nonneg (Int.sub_nonneg.mpr hfe)]; ring_nf
   unfold roundUP; dsimp only
   rw [hr_eq]; apply mul_le_mul_of_nonneg_right _ (bpow_pos fmt e).le
   exact_mod_cast Int.ceil_le.mpr ((div_le_iff₀ (bpow_pos fmt e)).mpr (hr_eq.symm ▸ hry))

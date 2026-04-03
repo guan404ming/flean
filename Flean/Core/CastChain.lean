@@ -65,7 +65,7 @@ theorem narrow_widen_id {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt
 /-- Error of a two-step narrowing chain: round in fmt2 then round in fmt1.
     The total error is bounded by the sum of individual errors.
     This is a first-order bound (additive). -/
-theorem cast_chain_two_error {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+theorem cast_chain_two_error {fmt1 fmt2 : FloatFormat} (_href : FormatRefines fmt1 fmt2)
     (x : ℝ) :
     |x - roundNNE fmt1 (roundNNE fmt2 x)| ≤
       |x - roundNNE fmt2 x| + |roundNNE fmt2 x - roundNNE fmt1 (roundNNE fmt2 x)| := by
@@ -121,7 +121,7 @@ theorem cast_chain_same_format (fmt : FloatFormat) (x : ℝ) (n : ℕ) :
     The error is bounded by the fmt1 rounding error alone when double
     rounding is correct (same cexp or repr intermediate). -/
 theorem cast_chain_three_same_cexp {fmt1 fmt2 fmt3 : FloatFormat}
-    (h12 : FormatRefines fmt1 fmt2) (h23 : FormatRefines fmt2 fmt3)
+    (h12 : FormatRefines fmt1 fmt2) (_h23 : FormatRefines fmt2 fmt3)
     {x : ℝ}
     (hcexp12 : cexp fmt1 (roundNNE fmt3 x) = cexp fmt2 (roundNNE fmt3 x)) :
     roundNNE fmt1 (roundNNE fmt2 (roundNNE fmt3 x)) =
@@ -213,11 +213,11 @@ Error accumulates but is bounded by the composition theorem. -/
 /-- Progressive narrowing: the total error of two narrowing steps is
     bounded by the sum of individual errors plus a cross term. -/
 theorem progressive_narrow_error {fmt1 fmt2 fmt3 : FloatFormat}
-    (h12 : FormatRefines fmt1 fmt2) (h23 : FormatRefines fmt2 fmt3)
+    (_h12 : FormatRefines fmt1 fmt2) (_h23 : FormatRefines fmt2 fmt3)
     (x : ℝ)
-    (hx3 : (fmt3.β : ℝ) ^ (fmt3.emin + (fmt3.prec : ℤ) - 1) ≤ |x|)
-    (hx2 : (fmt2.β : ℝ) ^ (fmt2.emin + (fmt2.prec : ℤ) - 1) ≤ |roundNNE fmt3 x|)
-    (hx1 : (fmt1.β : ℝ) ^ (fmt1.emin + (fmt1.prec : ℤ) - 1) ≤ |roundNNE fmt2 (roundNNE fmt3 x)|) :
+    (_hx3 : (fmt3.β : ℝ) ^ (fmt3.emin + (fmt3.prec : ℤ) - 1) ≤ |x|)
+    (_hx2 : (fmt2.β : ℝ) ^ (fmt2.emin + (fmt2.prec : ℤ) - 1) ≤ |roundNNE fmt3 x|)
+    (_hx1 : (fmt1.β : ℝ) ^ (fmt1.emin + (fmt1.prec : ℤ) - 1) ≤ |roundNNE fmt2 (roundNNE fmt3 x)|) :
     |x - roundNNE fmt1 (roundNNE fmt2 (roundNNE fmt3 x))| ≤
       |x - roundNNE fmt3 x| +
       |roundNNE fmt3 x - roundNNE fmt2 (roundNNE fmt3 x)| +

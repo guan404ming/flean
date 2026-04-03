@@ -57,7 +57,7 @@ noncomputable def fast2Sum (fmt : FloatFormat) (a b : ℝ) : ℝ × ℝ :=
 
 /-- Nonneg case: `0 ≤ b ≤ a`, β = 2. Uses `2a` repr + Sterbenz. -/
 theorem dekker_sub_repr_nonneg {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
-    (ha : isRepresentable fmt a) (hb : isRepresentable fmt b)
+    (ha : isRepresentable fmt a) (_hb : isRepresentable fmt b)
     (ha0 : 0 ≤ a) (hb0 : 0 ≤ b) (hab : b ≤ a) :
     isRepresentable fmt (roundNNE fmt (a + b) - a) := by
   set s := roundNNE fmt (a + b) with hs_def

@@ -280,12 +280,11 @@ theorem FloatBits.zero_classify {spec : BinarySpec} :
   have h0 : (0 : BitVec spec.expWidth) ≠ BitVec.allOnes spec.expWidth := by
     intro hab
     have h1 := congr_arg BitVec.toNat hab
-    simp only [BitVec.toNat_zero, BitVec.toNat_allOnes] at h1
+    simp only [BitVec.toNat_allOnes] at h1
     have : 0 < 2 ^ spec.expWidth - 1 :=
       Nat.sub_pos_of_lt (Nat.one_lt_two_pow_iff.mpr (by have := spec.hExp; omega))
     exact absurd h1.symm (ne_of_gt this)
-  simp only [bne_iff_ne, ne_eq, beq_iff_eq, h0, not_false_eq_true, ite_false,
-    ite_true]
+  simp only [beq_iff_eq, h0, ite_false, ite_true]
 
 theorem FloatBits.zero_toReal {spec : BinarySpec} :
     (FloatBits.zero spec).toReal = 0 := by
@@ -300,7 +299,7 @@ theorem FloatBits.fromFields_classify_subnormal
   have h0 : (0 : BitVec spec.expWidth) ≠ BitVec.allOnes spec.expWidth := by
     intro hab
     have h1 := congr_arg BitVec.toNat hab
-    simp only [BitVec.toNat_zero, BitVec.toNat_allOnes] at h1
+    simp only [BitVec.toNat_allOnes] at h1
     have : 0 < 2 ^ spec.expWidth - 1 :=
       Nat.sub_pos_of_lt (Nat.one_lt_two_pow_iff.mpr (by have := spec.hExp; omega))
     exact absurd h1.symm (ne_of_gt this)
@@ -308,8 +307,7 @@ theorem FloatBits.fromFields_classify_subnormal
     beq_eq_false_iff_ne.mpr h0
   have h2 : (m == (0 : BitVec spec.sigWidth)) = false :=
     beq_eq_false_iff_ne.mpr hm
-  simp only [h1, h2, ite_false, ite_true, Bool.false_eq_true, not_false_eq_true,
-    bne_iff_ne, ne_eq, beq_iff_eq]
+  simp only [h1, h2, ite_false, ite_true, Bool.false_eq_true, beq_iff_eq]
 
 /-! ## Reverse bridge -/
 
@@ -395,26 +393,24 @@ theorem FloatBits.exists_of_isBitRepresentable
         · simp only [hm_pos, ite_false]
           have hne : (1 : BitVec 1) ≠ 0 := by decide
           have hbeq : ((1 : BitVec 1) == (0 : BitVec 1)) = false := beq_eq_false_iff_ne.mpr hne
-          simp only [hbeq, ite_false]; rfl
+          simp only [hbeq]; rfl
       -- Compute toReal directly
       have hsig_add : m.natAbs - 2 ^ spec.sigWidth + 2 ^ spec.sigWidth = m.natAbs := by omega
       simp only [FloatBits.toReal,
         fromFields_classify_normal s expBV sigBV hexpBV_ne_zero hexpBV_ne_max,
         FloatBits.toRepr, FloatBits.sign,
         fromFields_isExpZero, beq_eq_false_iff_ne.mpr hexpBV_ne_zero,
-        Bool.false_eq_true, ↓reduceIte, if_false,
+        Bool.false_eq_true, ↓reduceIte,
         fromFields_expField, fromFields_sigField, fromFields_signBit,
         hexpBV_toNat, hsigBV_toNat, show m.natAbs - 2 ^ spec.sigWidth + 2 ^ spec.sigWidth
           = m.natAbs from hsig_add, hs_sign]
       rw [hval, hm_decomp, hE_eq]
       push_cast
       rcases Int.lt_or_lt_of_ne hm0 with hm_neg | hm_pos
-      · simp only [show ¬0 < m from not_lt.mpr hm_neg.le, ite_false,
-          Int.natCast_natAbs, abs_of_neg hm_neg]; ring
-      · simp only [hm_pos, ite_true,
-          Int.natCast_natAbs, abs_of_pos hm_pos]; ring
+      · simp only [show ¬0 < m from not_lt.mpr hm_neg.le, ite_false]; ring_nf
+      · simp only [hm_pos, ite_true]; ring_nf
     · -- Case: |m| < 2^sigWidth (subnormal encoding)
-      push_neg at ham_lo_dec
+      push Not at ham_lo_dec
       have ham_sub : m.natAbs < 2 ^ spec.sigWidth := ham_lo_dec
       -- Canonicality forces e = emin
       have hcanon_sub : e = spec.toFormat.emin := by
@@ -439,7 +435,7 @@ theorem FloatBits.exists_of_isBitRepresentable
         · simp only [hm_pos, ite_false]
           have hne : (1 : BitVec 1) ≠ 0 := by decide
           have hbeq : ((1 : BitVec 1) == (0 : BitVec 1)) = false := beq_eq_false_iff_ne.mpr hne
-          simp only [hbeq, ite_false]; rfl
+          simp only [hbeq]; rfl
       refine ⟨FloatBits.fromFields s 0 sigBV, Or.inr (Or.inl
           (fromFields_classify_subnormal s sigBV hsigBV_ne_zero)), ?_⟩
       simp only [FloatBits.toReal, fromFields_classify_subnormal s sigBV hsigBV_ne_zero,
@@ -449,9 +445,7 @@ theorem FloatBits.exists_of_isBitRepresentable
       simp only [BinarySpec.toFormat]
       push_cast
       rcases Int.lt_or_lt_of_ne hm0 with hm_neg | hm_pos
-      · simp only [show ¬0 < m from not_lt.mpr hm_neg.le, ite_false,
-          Int.natCast_natAbs, abs_of_neg hm_neg]
-      · simp only [hm_pos, ite_true,
-          Int.natCast_natAbs, abs_of_pos hm_pos]
+      · simp only [show ¬0 < m from not_lt.mpr hm_neg.le, ite_false]
+      · simp only [hm_pos, ite_true]
 
 end Flean
