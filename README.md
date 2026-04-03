@@ -18,14 +18,15 @@ A Lean 4 formalization of IEEE 754 floating-point arithmetic, built on Mathlib.
 | Monotonicity and idempotence | `Core/RoundProps.lean`, `Core/DirectedRound.lean` |
 | Relative error bounds | `Core/RelativeError.lean` |
 | ULP and Sterbenz lemma | `Core/ULP.lean` |
-| Double rounding (directed modes) | `Core/DoubleRound.lean` |
+| Double rounding (directed + NNE) | `Core/DoubleRound.lean`, `Core/DoubleRoundNNE.lean` |
+| Cast chain composition | `Core/CastChain.lean` |
 | Round-round ordering | `Core/RoundRound.lean` |
 | FLX / FLT / FTZ models | `Core/Models.lean` |
 | Bit-real refinement | `Bridge.lean` |
 | Exception flags | `Arith/Exceptions.lean` |
 | Mixed-precision casts | `Arith/Conversions.lean` |
 
-178 theorems/lemmas, all without sorry.
+217 theorems/lemmas, all without sorry.
 
 ## Build
 
