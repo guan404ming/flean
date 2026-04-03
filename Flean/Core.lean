@@ -5,3 +5,4 @@ import Flean.Core.Models
 import Flean.Core.ULP
 import Flean.Core.NearestEven
 import Flean.Core.NearestAway
+import Flean.Core.DoubleRound
