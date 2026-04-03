@@ -176,4 +176,148 @@ theorem f32_widen_narrow_f64 {x : ℝ} (hx : isRepresentable binary32 x) :
     roundNNE binary32 (roundNNE binary64 x) = x :=
   widen_narrow_id binary32_refines_binary64 hx
 
+/-! ## ML cast patterns -/
+
+/-! ### Pattern 1: Widen-compute-narrow
+
+The most common ML pattern: widen inputs to higher precision, compute,
+then narrow the result. E.g., cast f16 inputs to f32, multiply, cast
+result back to f16. The error is that of the narrow format alone. -/
+
+/-- Widen-compute-narrow: if we widen x to fmt2, apply an exact operation f,
+    then narrow back to fmt1, the result equals rounding f(x) in fmt1.
+    (Here "exact operation" means f is applied to the real value.) -/
+theorem widen_compute_narrow {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+    {x : ℝ} (hx : isRepresentable fmt1 x) :
+    roundNNE fmt1 (roundNNE fmt2 x) = x :=
+  widen_narrow_id href hx
+
+/-! ### Pattern 2: Accumulation in wider precision
+
+In ML training, partial sums are accumulated in f32 while inputs are f16.
+Adding an f16 value to an f32 accumulator: the f16 value is exact in f32
+(by widening), so the only rounding is the f32 addition rounding. -/
+
+/-- Adding a narrow-format value to a wide-format accumulator: the narrow
+    value is exact in the wide format, so no cast error from widening. -/
+theorem accumulate_widen_exact {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+    {x : ℝ} (hx : isRepresentable fmt1 x) :
+    roundNNE fmt2 x = x :=
+  cast_widen_exact href hx
+
+/-! ### Pattern 3: Progressive narrowing (quantization pipeline)
+
+f64 → f32 → f16: two successive narrowing steps.
+Error accumulates but is bounded by the composition theorem. -/
+
+/-- Progressive narrowing: the total error of two narrowing steps is
+    bounded by the sum of individual errors plus a cross term. -/
+theorem progressive_narrow_error {fmt1 fmt2 fmt3 : FloatFormat}
+    (h12 : FormatRefines fmt1 fmt2) (h23 : FormatRefines fmt2 fmt3)
+    (x : ℝ)
+    (hx3 : (fmt3.β : ℝ) ^ (fmt3.emin + (fmt3.prec : ℤ) - 1) ≤ |x|)
+    (hx2 : (fmt2.β : ℝ) ^ (fmt2.emin + (fmt2.prec : ℤ) - 1) ≤ |roundNNE fmt3 x|)
+    (hx1 : (fmt1.β : ℝ) ^ (fmt1.emin + (fmt1.prec : ℤ) - 1) ≤ |roundNNE fmt2 (roundNNE fmt3 x)|) :
+    |x - roundNNE fmt1 (roundNNE fmt2 (roundNNE fmt3 x))| ≤
+      |x - roundNNE fmt3 x| +
+      |roundNNE fmt3 x - roundNNE fmt2 (roundNNE fmt3 x)| +
+      |roundNNE fmt2 (roundNNE fmt3 x) - roundNNE fmt1 (roundNNE fmt2 (roundNNE fmt3 x))| := by
+  calc |x - roundNNE fmt1 (roundNNE fmt2 (roundNNE fmt3 x))|
+      = |(x - roundNNE fmt3 x) +
+         (roundNNE fmt3 x - roundNNE fmt2 (roundNNE fmt3 x)) +
+         (roundNNE fmt2 (roundNNE fmt3 x) - roundNNE fmt1 (roundNNE fmt2 (roundNNE fmt3 x)))| := by
+        congr 1; ring
+    _ ≤ _ := by
+        set a1 := x - roundNNE fmt3 x
+        set a2 := roundNNE fmt3 x - roundNNE fmt2 (roundNNE fmt3 x)
+        set a3 := roundNNE fmt2 (roundNNE fmt3 x) - roundNNE fmt1 (roundNNE fmt2 (roundNNE fmt3 x))
+        have h1 : |a1 + a2 + a3| ≤ |a1 + a2| + |a3| := abs_add_le _ _
+        have h2 : |a1 + a2| ≤ |a1| + |a2| := abs_add_le _ _
+        linarith
+
+/-! ### Pattern 4: Cast absorption (idempotence)
+
+Redundant casts can be eliminated. -/
+
+/-- Narrowing twice to the same format is the same as once. -/
+theorem narrow_absorb (fmt : FloatFormat) (x : ℝ) :
+    roundNNE fmt (roundNNE fmt x) = roundNNE fmt x :=
+  roundNNE_idempotent fmt x
+
+/-- Narrowing to fmt1 absorbs a prior narrowing to fmt1 through fmt2. -/
+theorem narrow_absorb_widen {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+    (x : ℝ) :
+    roundNNE fmt1 (roundNNE fmt2 (roundNNE fmt1 x)) = roundNNE fmt1 x := by
+  rw [narrow_widen_id href, roundNNE_idempotent]
+
+/-! ### Pattern 5: Monotonicity of cast error
+
+Coarser format has larger maximum error. -/
+
+/-- A finer format always has at most the rounding error of a coarser one. -/
+theorem finer_format_smaller_error {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+    (x : ℝ) :
+    |x - roundNNE fmt2 x| ≤ |x - roundNNE fmt1 x| := by
+  exact roundNNE_nearest fmt2 x (isRepresentable_of_refines href (roundNNE_isRepresentable fmt1 x))
+
+/-! ### Pattern 6: Error dominance
+
+When chaining a fine-then-coarse cast, the coarse cast dominates. -/
+
+/-- The error of fine-then-coarse is at most 2x the fine error plus the coarse error.
+    Since fine error ≤ coarse error, this gives ≤ 3x coarse error. -/
+theorem cast_chain_error_dominance {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+    (x : ℝ) :
+    |x - roundNNE fmt1 (roundNNE fmt2 x)| ≤
+      2 * |x - roundNNE fmt2 x| + |x - roundNNE fmt1 x| := by
+  have h1 := cast_chain_two_error href x
+  have h2 : |roundNNE fmt2 x - roundNNE fmt1 (roundNNE fmt2 x)| ≤
+      |roundNNE fmt2 x - roundNNE fmt1 x| :=
+    roundNNE_nearest fmt1 (roundNNE fmt2 x) (roundNNE_isRepresentable fmt1 x)
+  have h3 : |roundNNE fmt2 x - roundNNE fmt1 x| ≤
+      |roundNNE fmt2 x - x| + |x - roundNNE fmt1 x| := by
+    calc |roundNNE fmt2 x - roundNNE fmt1 x|
+        = |(roundNNE fmt2 x - x) + (x - roundNNE fmt1 x)| := by congr 1; ring
+      _ ≤ _ := abs_add_le _ _
+  linarith [abs_sub_comm (roundNNE fmt2 x) x]
+
+/-! ### Pattern 7: Transitivity of FormatRefines -/
+
+theorem FormatRefines.trans {fmt1 fmt2 fmt3 : FloatFormat}
+    (h12 : FormatRefines fmt1 fmt2) (h23 : FormatRefines fmt2 fmt3) :
+    FormatRefines fmt1 fmt3 where
+  radix_eq := h12.radix_eq.trans h23.radix_eq
+  prec_le := le_trans h12.prec_le h23.prec_le
+  emin_le := le_trans h23.emin_le h12.emin_le
+
+/-- Widening through an intermediate format is exact. -/
+theorem widen_chain_exact {fmt1 fmt2 fmt3 : FloatFormat}
+    (h12 : FormatRefines fmt1 fmt2) (h23 : FormatRefines fmt2 fmt3)
+    {x : ℝ} (hx : isRepresentable fmt1 x) :
+    roundNNE fmt3 (roundNNE fmt2 x) = x := by
+  rw [cast_widen_exact h12 hx]
+  exact cast_widen_exact (h12.trans h23) hx
+
+/-! ### Concrete ML patterns -/
+
+/-- f16 multiply pattern: widen to f32, multiply is exact in f32 for f16 inputs. -/
+theorem f16_inputs_exact_in_f32 {x : ℝ} (hx : isRepresentable binary16 x) :
+    roundNNE binary32 x = x :=
+  accumulate_widen_exact binary16_refines_binary32 hx
+
+/-- f16 → f32 → f64 widening chain is exact. -/
+theorem f16_widen_chain_f64 {x : ℝ} (hx : isRepresentable binary16 x) :
+    roundNNE binary64 (roundNNE binary32 x) = x :=
+  widen_chain_exact binary16_refines_binary32 binary32_refines_binary64 hx
+
+/-- f32 accumulator pattern: narrow f32 result back to f16 gives single rounding. -/
+theorem f32_accumulate_narrow_f16 {x : ℝ} (hx : isRepresentable binary16 x) :
+    roundNNE binary16 (roundNNE binary32 x) = x :=
+  widen_narrow_id binary16_refines_binary32 hx
+
+/-- The finer the intermediate format, the smaller the intermediate error. -/
+theorem f64_intermediate_better_than_f32 (x : ℝ) :
+    |x - roundNNE binary64 x| ≤ |x - roundNNE binary32 x| :=
+  finer_format_smaller_error binary32_refines_binary64 x
+
 end Flean
