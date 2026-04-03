@@ -3,3 +3,5 @@ import Flean.Core.Rounding
 import Flean.Core.RoundProps
 import Flean.Core.Models
 import Flean.Core.ULP
+import Flean.Core.NearestEven
+import Flean.Core.NearestAway

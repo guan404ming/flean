@@ -101,6 +101,25 @@ theorem cexp_emin_le (fmt : FloatFormat) (x : ℝ) : fmt.emin ≤ cexp fmt x := 
   · exact le_refl _
   · exact le_max_left _ _
 
+theorem cexp_le_cexp_of_abs_le (fmt : FloatFormat) {x y : ℝ} (hxy : |x| ≤ |y|) :
+    cexp fmt x ≤ cexp fmt y := by
+  unfold cexp
+  by_cases hx : x = 0
+  · simp [hx]; split
+    · exact le_refl _
+    · exact le_max_left _ _
+  · by_cases hy : y = 0
+    · have : |x| = 0 := le_antisymm (by rwa [hy, abs_zero] at hxy) (abs_nonneg x)
+      exact absurd (abs_eq_zero.mp this) hx
+    · simp only [hx, hy, ite_false]
+      apply max_le_max_left
+      have hlogβ : 0 < Real.log ↑fmt.β := Real.log_pos fmt.β_one_lt
+      have : Real.log |x| ≤ Real.log |y| :=
+        Real.log_le_log (abs_pos.mpr hx) hxy
+      have : Real.log |x| / Real.log ↑fmt.β ≤ Real.log |y| / Real.log ↑fmt.β :=
+        div_le_div_of_nonneg_right this hlogβ.le
+      linarith [Int.floor_le_floor this]
+
 /-! ## Rounding Logic -/
 
 /-- Truncate to zero -/

@@ -85,4 +85,27 @@ def roundAndPack {spec : BinarySpec} (mode : RoundingMode) (isNeg : Bool)
     { value := FloatBits.fromFields res_sign res_e res_m,
       flags := { inexact := inexact, underflow := underflow } }
 
+/-! ## Properties -/
+
+/-- No rounding occurs when Guard, Round, and Sticky bits are all false. -/
+theorem roundDecision_no_grs (mode : RoundingMode) (isNeg : Bool) (m : Nat) (lsb : Bool) :
+    roundDecision mode isNeg m lsb false false false = false := by
+  cases mode <;> simp [roundDecision]
+
+/-- roundAndPack with exact normalized input in range returns the packed result unchanged. -/
+theorem roundAndPack_normal_exact {spec : BinarySpec} (mode : RoundingMode) (isNeg : Bool)
+    (rawExp : Int) (rawSig : Nat)
+    (hexp_pos : 1 ≤ rawExp)
+    (hexp_max : rawExp < 2 ^ spec.expWidth - 1)
+    (hsig_hi : rawSig < 2 ^ (spec.sigWidth + 1)) :
+    (roundAndPack mode isNeg rawExp rawSig).value =
+      FloatBits.fromFields
+        (if isNeg then BitVec.ofNat 1 1 else BitVec.ofNat 1 0)
+        (BitVec.ofNat spec.expWidth rawExp.toNat)
+        (BitVec.ofNat spec.sigWidth (rawSig % 2 ^ spec.sigWidth)) := by
+  simp only [roundAndPack, show ¬(rawExp < 1) from by omega,
+    Bool.or_false, roundDecision_no_grs, ↓reduceIte]
+  -- Goal should now have rawSig and rawExp without boolean noise
+  split_ifs with h1 h2 <;> simp_all <;> omega
+
 end Flean
