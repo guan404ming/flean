@@ -1,41 +1,59 @@
 # Flean
 
-A Lean 4 formalization of IEEE 754 floating-point arithmetic, built on Mathlib.
+A Lean 4 formalization of IEEE 754 floating-point arithmetic with mixed-precision analysis, built on Mathlib.
 
-## Structure
+230 theorems, zero `sorry`.
 
-- **Core** -- Real-valued rounding models (formats, rounding modes, error bounds, ULP, double rounding)
-- **Binary** -- Bit-level IEEE 754 representation (BitVec packing, classification, special values)
-- **Arith** -- Arithmetic operations (add, mul, div, sqrt, FMA, comparisons, conversions)
-- **Bridge** -- Refinement connecting bit-level and real-valued models
-- **Tactics** -- Mixed-precision automation for ML compiler analysis
-
-## Key Results
-
-| Result | File |
-|---|---|
-| Rounding modes (all 5 IEEE 754) | `Core/Rounding.lean` |
-| Monotonicity and idempotence | `Core/RoundProps.lean`, `Core/DirectedRound.lean` |
-| Relative error bounds | `Core/RelativeError.lean` |
-| ULP and Sterbenz lemma | `Core/ULP.lean` |
-| Double rounding (directed + NNE) | `Core/DoubleRound.lean`, `Core/DoubleRoundNNE.lean` |
-| Cast chain composition | `Core/CastChain.lean` |
-| Round-round ordering | `Core/RoundRound.lean` |
-| FLX / FLT / FTZ models | `Core/Models.lean` |
-| Bit-real refinement | `Bridge.lean` |
-| Exception flags | `Arith/Exceptions.lean` |
-| Mixed-precision casts | `Arith/Conversions.lean` |
-
-217 theorems/lemmas, all without sorry.
-
-## Build
+## Getting Started
 
 ```
 lake build
 ```
 
-Requires Lean 4 and Mathlib.
+Requires [Lean 4](https://lean-lang.org/) and [Mathlib](https://github.com/leanprover-community/mathlib4).
+
+## Structure
+
+```
+Flean/
+├── Core/           Real-valued rounding models, error bounds, double rounding,
+│                   cast chain composition, relative error, ULP, Sterbenz
+├── Binary/         Bit-level IEEE 754 (BitVec packing, classification, special values)
+├── Arith/          Arithmetic operations (add, mul, div, sqrt, FMA, comparisons)
+├── Bridge.lean     Refinement connecting bit-level and real-valued models
+└── Tactics/        Automation for mixed-precision proofs
+```
+
+## Tactics
+
+```lean
+-- Prove cast chain exactness (widen-narrow, idempotence, absorption)
+example {x : ℝ} (hx : isRepresentable binary16 x) :
+    roundNNE binary16 (roundNNE binary32 x) = x := by
+  flean_cast_safe
+
+-- Derive error bounds for cast chains
+example (x : ℝ) :
+    |x - roundNNE binary64 x| ≤ |x - roundNNE binary32 x| := by
+  flean_cast_bound
+
+-- Quantization scheme error bounds
+example {x : ℝ} (hx : isRepresentable binary16 x) :
+    roundNNE binary32 x = x := by
+  flean_quant_bound
+```
 
 ## Comparison with Flocq
 
-Flocq (Coq) provides real-valued rounding models. Flean covers similar abstract theory and adds bit-level operations, exception flags, comparisons, mixed-precision casts, and an ML-oriented tactic, bridging the gap between pure math and IEEE 754's operational spec.
+[Flocq](https://flocq.gitlabpages.inria.fr/) (Coq) provides real-valued rounding models. Flean covers similar abstract theory and adds:
+
+- Bit-level IEEE 754 representation with BitVec
+- Bit-real refinement bridge
+- Compositional cast chain error analysis
+- Mixed-precision automation tactics
+- Exception flags, comparisons, totalOrder
+- Concrete IEEE 754 format instances (binary16/32/64/128)
+
+## License
+
+Apache-2.0
