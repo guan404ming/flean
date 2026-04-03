@@ -10,3 +10,4 @@ import Flean.Core.RelativeError
 import Flean.Core.RoundRound
 import Flean.Core.DoubleRoundNNE
 import Flean.Core.CastChain
+import Flean.Core.ChainError
