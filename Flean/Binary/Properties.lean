@@ -334,7 +334,12 @@ theorem FloatBits.exists_of_isBitRepresentable
     -- Sign bit
     let s : BitVec 1 := if 0 < m then 0 else 1
     have hs_val : Sign.toInt (if s = 0 then .pos else .neg) = if 0 < m then 1 else -1 := by
-      simp only [s]; split_ifs <;> simp [Sign.toInt]
+      simp only [s]
+      by_cases hm_pos : 0 < m
+      · simp only [hm_pos, ite_true]; rfl
+      · simp only [hm_pos, ite_false]
+        have hne : (1 : BitVec 1) ≠ 0 := by decide
+        simp only [hne, ite_false]; rfl
     -- m = sign * |m| (as integers, then cast)
     have hm_decomp : (m : ℝ) = ((if 0 < m then (1 : ℤ) else -1) * (m.natAbs : ℤ) : ℤ) := by
       rcases Int.lt_or_lt_of_ne hm0 with h | h
@@ -370,65 +375,83 @@ theorem FloatBits.exists_of_isBitRepresentable
       -- Construct the FloatBits
       let expBV : BitVec spec.expWidth := BitVec.ofNat spec.expWidth E
       let sigBV : BitVec spec.sigWidth := BitVec.ofNat spec.sigWidth (m.natAbs - 2 ^ spec.sigWidth)
-      have hexpBV_toNat : expBV.toNat = E := by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hE_lt
+      have hexpBV_toNat : expBV.toNat = E := by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hE_lt]
       have hsigBV_toNat : sigBV.toNat = m.natAbs - 2 ^ spec.sigWidth :=
-        by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)
+        by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
       have hexpBV_ne_zero : expBV ≠ 0 := by
         intro h; have := congr_arg BitVec.toNat h
         simp [hexpBV_toNat] at this; omega
       have hexpBV_ne_max : expBV ≠ BitVec.allOnes spec.expWidth := by
         intro h; have := congr_arg BitVec.toNat h
         simp [hexpBV_toNat, BitVec.toNat_allOnes] at this; omega
-      set f := FloatBits.fromFields s expBV sigBV
-      have hclass : f.classify = .normal :=
-        fromFields_classify_normal s expBV sigBV hexpBV_ne_zero hexpBV_ne_max
-      refine ⟨f, Or.inl hclass, ?_⟩
-      -- toReal = x
-      simp only [FloatBits.toReal, hclass]
-      -- Unfold toRepr for normal
-      have h_not_zero : f.isExpZero = false := by
-        simp [f, isExpZero, hexpBV_ne_zero, beq_eq_false_iff_ne]
-      conv_lhs => simp only [FloatBits.toRepr, h_not_zero, ↓reduceIte,
-        fromFields_expField, fromFields_sigField]
-      simp only [hexpBV_toNat, hsigBV_toNat, Sign.toInt]
-      -- Need to show the sign matches
-      change (↑(if s = 0 then Sign.pos else Sign.neg).toInt : ℝ) *
-        ↑(↑(m.natAbs - 2 ^ spec.sigWidth) + 2 ^ spec.sigWidth) *
-        (2 : ℝ) ^ ((↑E : ℤ) - ↑spec.bias - ↑spec.sigWidth) = x
-      rw [hE_eq, hval, hm_decomp]
-      have : m.natAbs - 2 ^ spec.sigWidth + 2 ^ spec.sigWidth = m.natAbs := by omega
-      rw [show (↑(m.natAbs - 2 ^ spec.sigWidth) + 2 ^ spec.sigWidth : ℤ) =
-        (m.natAbs : ℤ) from by exact_mod_cast this]
-      simp only [hs_val]
-      push_cast; ring
+      refine ⟨FloatBits.fromFields s expBV sigBV, Or.inl
+          (fromFields_classify_normal s expBV sigBV hexpBV_ne_zero hexpBV_ne_max), ?_⟩
+      -- Prove sign.toInt = if 0 < m then 1 else -1
+      have hs_sign : (if (s == (0 : BitVec 1)) = true then Sign.pos else Sign.neg).toInt =
+          if 0 < m then 1 else -1 := by
+        simp only [s]
+        by_cases hm_pos : 0 < m
+        · simp only [hm_pos, ite_true, beq_self_eq_true, ite_true]; rfl
+        · simp only [hm_pos, ite_false]
+          have hne : (1 : BitVec 1) ≠ 0 := by decide
+          have hbeq : ((1 : BitVec 1) == (0 : BitVec 1)) = false := beq_eq_false_iff_ne.mpr hne
+          simp only [hbeq, ite_false]; rfl
+      -- Compute toReal directly
+      have hsig_add : m.natAbs - 2 ^ spec.sigWidth + 2 ^ spec.sigWidth = m.natAbs := by omega
+      simp only [FloatBits.toReal,
+        fromFields_classify_normal s expBV sigBV hexpBV_ne_zero hexpBV_ne_max,
+        FloatBits.toRepr, FloatBits.sign,
+        fromFields_isExpZero, beq_eq_false_iff_ne.mpr hexpBV_ne_zero,
+        Bool.false_eq_true, ↓reduceIte, if_false,
+        fromFields_expField, fromFields_sigField, fromFields_signBit,
+        hexpBV_toNat, hsigBV_toNat, show m.natAbs - 2 ^ spec.sigWidth + 2 ^ spec.sigWidth
+          = m.natAbs from hsig_add, hs_sign]
+      rw [hval, hm_decomp, hE_eq]
+      push_cast
+      rcases Int.lt_or_lt_of_ne hm0 with hm_neg | hm_pos
+      · simp only [show ¬0 < m from not_lt.mpr hm_neg.le, ite_false,
+          Int.natCast_natAbs, abs_of_neg hm_neg]; ring
+      · simp only [hm_pos, ite_true,
+          Int.natCast_natAbs, abs_of_pos hm_pos]; ring
     · -- Case: |m| < 2^sigWidth (subnormal encoding)
       push_neg at ham_lo_dec
       have ham_sub : m.natAbs < 2 ^ spec.sigWidth := ham_lo_dec
       -- Canonicality forces e = emin
       have hcanon_sub : e = spec.toFormat.emin := by
         rcases hcanon with h | h
-        · exfalso; have : (m.natAbs : ℤ) = |m| := Int.natCast_natAbs m
-          have := this ▸ h; omega
+        · exfalso
+          have habs : |m| = (m.natAbs : ℤ) := (Int.natCast_natAbs m).symm
+          rw [habs] at h
+          exact absurd (Int.ofNat_lt.mpr ham_sub) (not_lt.mpr h)
         · exact h
       -- expField = 0, sigField = m.natAbs
       let sigBV : BitVec spec.sigWidth := BitVec.ofNat spec.sigWidth m.natAbs
-      have hsigBV_toNat : sigBV.toNat = m.natAbs := by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt ham_sub
+      have hsigBV_toNat : sigBV.toNat = m.natAbs := by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt ham_sub]
       have hsigBV_ne_zero : sigBV ≠ 0 := by
         intro h; have := congr_arg BitVec.toNat h
         simp [hsigBV_toNat] at this
         exact hm0 (Int.natAbs_eq_zero.mp (by omega))
-      set f := FloatBits.fromFields s 0 sigBV
-      have hclass : f.classify = .subnormal :=
-        fromFields_classify_subnormal s sigBV hsigBV_ne_zero
-      refine ⟨f, Or.inr (Or.inl hclass), ?_⟩
-      simp only [FloatBits.toReal, hclass]
-      conv_lhs => simp only [FloatBits.toRepr, fromFields_isExpZero, beq_self_eq_true,
-        ↓reduceIte, fromFields_sigField]
-      simp only [hsigBV_toNat, Sign.toInt]
-      change (↑(if s = 0 then Sign.pos else Sign.neg).toInt : ℝ) *
-        ↑(↑m.natAbs) * (2 : ℝ) ^ ((1 : ℤ) - ↑spec.bias - ↑spec.sigWidth) = x
+      have hs_sign : (if (s == (0 : BitVec 1)) = true then Sign.pos else Sign.neg).toInt =
+          if 0 < m then 1 else -1 := by
+        simp only [s]
+        by_cases hm_pos : 0 < m
+        · simp only [hm_pos, ite_true, beq_self_eq_true, ite_true]; rfl
+        · simp only [hm_pos, ite_false]
+          have hne : (1 : BitVec 1) ≠ 0 := by decide
+          have hbeq : ((1 : BitVec 1) == (0 : BitVec 1)) = false := beq_eq_false_iff_ne.mpr hne
+          simp only [hbeq, ite_false]; rfl
+      refine ⟨FloatBits.fromFields s 0 sigBV, Or.inr (Or.inl
+          (fromFields_classify_subnormal s sigBV hsigBV_ne_zero)), ?_⟩
+      simp only [FloatBits.toReal, fromFields_classify_subnormal s sigBV hsigBV_ne_zero,
+        FloatBits.toRepr, FloatBits.sign, fromFields_isExpZero, beq_self_eq_true, ↓reduceIte,
+        fromFields_sigField, fromFields_signBit, hsigBV_toNat, hs_sign]
       rw [hval, hm_decomp, hcanon_sub]
-      simp only [hs_val, BinarySpec.toFormat]
-      push_cast; ring
+      simp only [BinarySpec.toFormat]
+      push_cast
+      rcases Int.lt_or_lt_of_ne hm0 with hm_neg | hm_pos
+      · simp only [show ¬0 < m from not_lt.mpr hm_neg.le, ite_false,
+          Int.natCast_natAbs, abs_of_neg hm_neg]
+      · simp only [hm_pos, ite_true,
+          Int.natCast_natAbs, abs_of_pos hm_pos]
 
 end Flean
