@@ -7,11 +7,19 @@ Double rounding theorem: rounding in two steps (first to a finer format,
 then to a coarser format) yields the same result as rounding directly
 to the coarser format.
 
-For directed rounding modes (roundDN, roundUP, roundTZ), the only condition
-is that fmt2 refines fmt1 (same radix, at least as much precision, at least
-as small emin). The proof uses only monotonicity and idempotence.
+## Directed modes (roundDN, roundUP, roundTZ)
+Only require that fmt2 refines fmt1. Proof uses monotonicity and idempotence.
 
-This follows Flocq's `round_round` family of theorems.
+## Round-to-nearest-even (roundNNE)
+Proved for two cases:
+1. Same canonical exponent (subnormal range with equal emin).
+2. Input already representable in fmt1.
+
+The general NNE + NNE double rounding fails for arbitrary real inputs.
+Counterexample: β=2, p1=2, p2=5, x=2.51 gives roundNNE_p1(roundNNE_p2(2.51))
+= 2 ≠ 3 = roundNNE_p1(2.51). The intermediate rounding lands on the midpoint
+2.5, causing a spurious tie-break. For bounded-precision IEEE 754 inputs
+(precision ≤ 2*p1), this is avoided when p2 ≥ 2*p1.
 -/
 
 namespace Flean
@@ -63,11 +71,9 @@ theorem double_roundUP {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2
     calc roundUP fmt1 (roundUP fmt2 x)
         ≤ roundUP fmt1 (roundUP fmt1 x) := roundUP_monotone fmt1 h_le
       _ = roundUP fmt1 x := roundUP_idempotent fmt1 x
-  have h2 : roundUP fmt1 x ≤ roundUP fmt1 (roundUP fmt2 x) :=
-    roundUP_monotone fmt1 (roundUP_ge fmt2 x)
-  linarith
+  linarith [roundUP_monotone fmt1 (roundUP_ge fmt2 x)]
 
-/-- Double rounding for roundTZ. Reduces to roundDN via sign analysis. -/
+/-- Double rounding for roundTZ. -/
 theorem double_roundTZ {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2) (x : ℝ) :
     roundTZ fmt1 (roundTZ fmt2 x) = roundTZ fmt1 x := by
   by_cases hx : 0 ≤ x
@@ -76,25 +82,16 @@ theorem double_roundTZ {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2
         ← roundDN_eq_roundTZ_nonneg fmt1 hx]
     exact double_roundDN href x
   · push Not at hx
-    -- For x < 0: roundTZ fmt2 x ≤ 0, so we work with -x > 0
-    have hx_neg : x < 0 := hx
-    -- roundTZ fmt2 x = -roundTZ fmt2 (-x), and roundTZ fmt2 (-x) ≥ 0
     have h0 : 0 ≤ -x := by linarith
-    have h1 : roundTZ fmt2 x = -(roundTZ fmt2 (-x)) := by
-      linarith [roundTZ_neg fmt2 x]
-    have h2 : roundTZ fmt1 x = -(roundTZ fmt1 (-x)) := by
-      linarith [roundTZ_neg fmt1 x]
-    rw [h1, h2]
-    have h3 : roundTZ fmt1 (-(roundTZ fmt2 (-x))) = -(roundTZ fmt1 (roundTZ fmt2 (-x))) :=
-      roundTZ_neg fmt1 _
-    rw [h3]
-    congr 1
+    have h1 : roundTZ fmt2 x = -(roundTZ fmt2 (-x)) := by linarith [roundTZ_neg fmt2 x]
+    have h2 : roundTZ fmt1 x = -(roundTZ fmt1 (-x)) := by linarith [roundTZ_neg fmt1 x]
+    rw [h1, h2, roundTZ_neg fmt1]; congr 1
     rw [← roundDN_eq_roundTZ_nonneg fmt1 (roundTZ_nonneg fmt2 h0),
         ← roundDN_eq_roundTZ_nonneg fmt2 h0,
         ← roundDN_eq_roundTZ_nonneg fmt1 h0]
     exact double_roundDN href (-x)
 
-/-! ## Sandwich lemma for roundNNE -/
+/-! ## Sandwich and cexp lemmas -/
 
 /-- The intermediate roundNNE fmt2 result lies in [roundDN fmt1 x, roundUP fmt1 x]. -/
 theorem roundNNE_between_DN_UP {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2) (x : ℝ) :
@@ -110,8 +107,6 @@ theorem roundNNE_between_DN_UP {fmt1 fmt2 : FloatFormat} (href : FormatRefines f
       _ ≤ roundUP fmt1 (roundUP fmt2 x) :=
           roundUP_monotone fmt1 (roundNNE_le_roundUP fmt2 x)
       _ = roundUP fmt1 x := double_roundUP href x
-
-/-! ## Canonical exponent relationship -/
 
 /-- The fine-format cexp is at most the coarse-format cexp. -/
 theorem cexp_refines_le {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2) (x : ℝ) :
@@ -133,5 +128,42 @@ theorem bpow_cexp_refines_le {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt
   exact zpow_le_zpow_right₀
     (by exact_mod_cast (show 1 ≤ fmt2.β from by have := fmt2.hβ; omega))
     (cexp_refines_le href x)
+
+/-! ## Double rounding for roundNNE -/
+
+/-- When both formats share the same cexp, roundNNE coincides. -/
+theorem roundNNE_eq_of_same_cexp {fmt1 fmt2 : FloatFormat} (hβ : fmt1.β = fmt2.β)
+    {x : ℝ} (hcexp : cexp fmt1 x = cexp fmt2 x) :
+    roundNNE fmt1 x = roundNNE fmt2 x := by
+  unfold roundNNE bpow; dsimp only; rw [hcexp, hβ]
+
+/-- Double rounding for roundNNE when cexp fmt1 x = cexp fmt2 x.
+    Covers the subnormal range when both formats share the same emin. -/
+theorem double_roundNNE_same_cexp {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+    {x : ℝ} (hcexp : cexp fmt1 x = cexp fmt2 x) :
+    roundNNE fmt1 (roundNNE fmt2 x) = roundNNE fmt1 x := by
+  rw [← roundNNE_eq_of_same_cexp href.radix_eq hcexp]
+  exact roundNNE_idempotent fmt1 x
+
+/-- Double rounding for roundNNE when x is representable in fmt1. -/
+theorem double_roundNNE_of_repr {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+    {x : ℝ} (hx : isRepresentable fmt1 x) :
+    roundNNE fmt1 (roundNNE fmt2 x) = roundNNE fmt1 x := by
+  have : roundNNE fmt2 x = x := roundNNE_repr_fixed fmt2 (isRepresentable_of_refines href hx)
+  rw [this, roundNNE_repr_fixed fmt1 hx]
+
+/-! ## Auxiliary lemmas for representable numbers -/
+
+/-- Any representable z ≤ x satisfies z ≤ roundDN x. -/
+theorem repr_le_roundDN' {fmt : FloatFormat} {z x : ℝ}
+    (hz : isRepresentable fmt z) (hzx : z ≤ x) :
+    z ≤ roundDN fmt x :=
+  (roundDN_repr_fixed fmt hz) ▸ roundDN_monotone fmt hzx
+
+/-- roundUP x ≤ any representable z ≥ x. -/
+theorem roundUP_le_repr' {fmt : FloatFormat} {z x : ℝ}
+    (hz : isRepresentable fmt z) (hxz : x ≤ z) :
+    roundUP fmt x ≤ z :=
+  (roundUP_repr_fixed fmt hz) ▸ roundUP_monotone fmt hxz
 
 end Flean
