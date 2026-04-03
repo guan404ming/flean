@@ -328,6 +328,49 @@ theorem roundUP_le_roundDN_of_cexp_ne (fmt : FloatFormat) {x y : ℝ}
         (by linarith : -y ≤ -x) (by linarith : 0 ≤ -y) hce_neg
       rw [roundUP_neg, roundDN_neg] at h; linarith
 
+/-! ## Error bounds -/
+
+theorem roundDN_error_abs (fmt : FloatFormat) (x : ℝ) :
+    |roundDN fmt x - x| < bpow fmt (cexp fmt x) := by
+  unfold roundDN; dsimp only; set e := cexp fmt x
+  have hb := bpow_pos fmt e
+  have h1 : (⌊x / bpow fmt e⌋ : ℝ) ≤ x / bpow fmt e := Int.floor_le _
+  have h2 : x / bpow fmt e < (⌊x / bpow fmt e⌋ : ℝ) + 1 := Int.lt_floor_add_one _
+  have key : (⌊x / bpow fmt e⌋ : ℝ) * bpow fmt e - x =
+      ((⌊x / bpow fmt e⌋ : ℝ) - x / bpow fmt e) * bpow fmt e := by
+    rw [sub_mul, div_mul_cancel₀ x (bpow_ne_zero fmt e)]
+  rw [key, abs_mul, abs_of_pos hb, abs_of_nonpos (by linarith)]
+  calc -(↑⌊x / bpow fmt e⌋ - x / bpow fmt e) * bpow fmt e
+      < 1 * bpow fmt e := by apply mul_lt_mul_of_pos_right _ hb; linarith
+    _ = bpow fmt e := one_mul _
+
+theorem roundUP_error_abs (fmt : FloatFormat) (x : ℝ) :
+    |roundUP fmt x - x| < bpow fmt (cexp fmt x) := by
+  have h := roundDN_error_abs fmt (-x)
+  rw [roundDN_neg, cexp_neg] at h
+  rwa [show -roundUP fmt x - -x = -(roundUP fmt x - x) from by ring, abs_neg] at h
+
+theorem roundDN_sub_abs_le (fmt : FloatFormat) (x : ℝ) :
+    |x - roundDN fmt x| < bpow fmt (cexp fmt x) := by
+  rw [show x - roundDN fmt x = -(roundDN fmt x - x) from by ring, abs_neg]
+  exact roundDN_error_abs fmt x
+
+theorem roundUP_sub_abs_le (fmt : FloatFormat) (x : ℝ) :
+    |roundUP fmt x - x| < bpow fmt (cexp fmt x) :=
+  roundUP_error_abs fmt x
+
+/-! ## Relative error bounds -/
+
+theorem roundDN_error_rel (fmt : FloatFormat) {x : ℝ}
+    (hx : (fmt.β : ℝ) ^ (fmt.emin + (fmt.prec : ℤ) - 1) ≤ |x|) :
+    |roundDN fmt x - x| ≤ machineEpsilon fmt * |x| :=
+  le_trans (roundDN_error_abs fmt x).le (bpow_cexp_le_machineEpsilon_mul_abs fmt hx)
+
+theorem roundUP_error_rel (fmt : FloatFormat) {x : ℝ}
+    (hx : (fmt.β : ℝ) ^ (fmt.emin + (fmt.prec : ℤ) - 1) ≤ |x|) :
+    |roundUP fmt x - x| ≤ machineEpsilon fmt * |x| :=
+  le_trans (roundUP_error_abs fmt x).le (bpow_cexp_le_machineEpsilon_mul_abs fmt hx)
+
 /-! ## RoundingFn instances -/
 
 noncomputable def roundTowardPositiveFn (fmt : FloatFormat) : RoundingFn fmt where

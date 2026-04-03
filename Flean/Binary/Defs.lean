@@ -128,17 +128,18 @@ def FloatBits.getExtendedSignificand {spec : BinarySpec} (f : FloatBits spec) :
 def BinarySpec.toFormat (spec : BinarySpec) : FloatFormat where
   β := 2
   prec := spec.sigWidth + 1
-  emin := 1 - (spec.bias : Int)
+  emin := 1 - (spec.bias : Int) - spec.sigWidth
   emax := (spec.bias : Int)
   hβ := by omega
   hprec := by omega
   hexp := by
-    suffices h : 1 ≤ (spec.bias : Int) by linarith
     have he : 1 ≤ spec.expWidth - 1 := by have := spec.hExp; omega
     have hp : 2 ≤ 2 ^ (spec.expWidth - 1) :=
       calc (2 : ℕ) = 2 ^ 1 := (pow_one 2).symm
         _ ≤ 2 ^ (spec.expWidth - 1) := Nat.pow_le_pow_right (by omega : 0 < 2) he
-    exact_mod_cast show 1 ≤ spec.bias from by unfold bias; omega
+    have hbias : 1 ≤ (spec.bias : Int) := by exact_mod_cast show 1 ≤ spec.bias from by unfold bias; omega
+    have := spec.hSig
+    omega
 
 /-- Decode a finite floating-point bit pattern into (sign, biased_exp, significand).
     For subnormals, IEEE 754 uses the minimum exponent (biased value 1),

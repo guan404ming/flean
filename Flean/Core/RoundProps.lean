@@ -432,19 +432,17 @@ theorem roundTZ_monotone (fmt : FloatFormat) : Monotone (roundTZ fmt) := by
       exact le_trans (roundTZ_nonpos fmt (le_of_not_ge hx))
         (roundTZ_nonneg fmt (not_le.mp hy).le)
 
-theorem roundTZ_error (fmt : FloatFormat) {x : ℝ}
+/-- For normal x, bpow(cexp x) ≤ ε * |x|. Key lemma for relative error bounds. -/
+theorem bpow_cexp_le_machineEpsilon_mul_abs (fmt : FloatFormat) {x : ℝ}
     (hx : (fmt.β : ℝ) ^ (fmt.emin + (fmt.prec : ℤ) - 1) ≤ |x|) :
-    |roundTZ fmt x - x| ≤ machineEpsilon fmt * |x| := by
+    bpow fmt (cexp fmt x) ≤ machineEpsilon fmt * |x| := by
   set e := cexp fmt x
-  have h_abs_err := roundTZ_error_abs fmt x
   have hx_ne : x ≠ 0 := by
     intro h; subst h; simp at hx; exact not_le.mpr (zpow_pos fmt.β_pos _) hx
   have hlogβ : 0 < Real.log ↑fmt.β := Real.log_pos fmt.β_one_lt
   have hp : 1 ≤ (fmt.prec : ℤ) := by exact_mod_cast fmt.hprec
-  -- β^(e+p-1) ≤ |x| from cexp definition
   have h_epow_le : (fmt.β : ℝ) ^ (e + (fmt.prec : ℤ) - 1) ≤ |x| := by
     have he_le : e + (fmt.prec : ℤ) - 1 ≤ ⌊Real.log |x| / Real.log ↑fmt.β⌋ := by
-      have he_emin := cexp_emin_le fmt x
       by_cases hx0 : x = 0
       · exact absurd hx0 hx_ne
       · have : e = max fmt.emin (⌊Real.log |x| / Real.log ↑fmt.β⌋ - ↑fmt.prec + 1) := by
@@ -452,19 +450,13 @@ theorem roundTZ_error (fmt : FloatFormat) {x : ℝ}
         cases max_choice fmt.emin (⌊Real.log |x| / Real.log ↑fmt.β⌋ - ↑fmt.prec + 1) with
         | inl h =>
             rw [this, h]
-            -- Need: emin + p - 1 ≤ ⌊log_β|x|⌋
             have hx_pos : 0 < |x| := abs_pos.mpr hx0
-            have h_log : (fmt.emin + (fmt.prec : ℤ) - 1 : ℤ) ≤
-                ⌊Real.log |x| / Real.log ↑fmt.β⌋ := by
-              apply Int.le_floor.mpr
-              rw [Int.cast_sub, Int.cast_add, Int.cast_natCast, Int.cast_one,
-                  le_div_iff₀ hlogβ]
+            exact Int.le_floor.mpr (by
+              rw [Int.cast_sub, Int.cast_add, Int.cast_natCast, Int.cast_one, le_div_iff₀ hlogβ]
               calc ((fmt.emin : ℝ) + (fmt.prec : ℝ) - 1) * Real.log ↑fmt.β
                   = Real.log ((fmt.β : ℝ) ^ (fmt.emin + (fmt.prec : ℤ) - 1)) := by
                     rw [Real.log_zpow]; push_cast; ring
-                _ ≤ Real.log |x| :=
-                    Real.log_le_log (zpow_pos fmt.β_pos _) hx
-            exact h_log
+                _ ≤ Real.log |x| := Real.log_le_log (zpow_pos fmt.β_pos _) hx)
         | inr h => rw [this, h]; omega
     have hx_pos : 0 < |x| := abs_pos.mpr hx_ne
     calc (fmt.β : ℝ) ^ (e + (fmt.prec : ℤ) - 1)
@@ -473,15 +465,17 @@ theorem roundTZ_error (fmt : FloatFormat) {x : ℝ}
       _ ≤ |x| := by
           rw [← Real.log_le_log_iff (zpow_pos fmt.β_pos _) hx_pos, Real.log_zpow]
           exact_mod_cast (le_div_iff₀ hlogβ).mp (Int.floor_le _)
-  -- β^e = β^(1-p) * β^(e+p-1) ≤ ε * |x|
-  have h_le : bpow fmt e ≤ machineEpsilon fmt * |x| := by
-    unfold machineEpsilon bpow
-    calc (fmt.β : ℝ) ^ e
-        = (fmt.β : ℝ) ^ (1 - (fmt.prec : ℤ)) * (fmt.β : ℝ) ^ (e + (fmt.prec : ℤ) - 1) := by
-          rw [← zpow_add₀ fmt.β_ne_zero]; congr 1; ring
-      _ ≤ (fmt.β : ℝ) ^ (1 - (fmt.prec : ℤ)) * |x| :=
-          mul_le_mul_of_nonneg_left h_epow_le (zpow_pos fmt.β_pos _).le
-  linarith [h_abs_err]
+  unfold machineEpsilon bpow
+  calc (fmt.β : ℝ) ^ e
+      = (fmt.β : ℝ) ^ (1 - (fmt.prec : ℤ)) * (fmt.β : ℝ) ^ (e + (fmt.prec : ℤ) - 1) := by
+        rw [← zpow_add₀ fmt.β_ne_zero]; congr 1; ring
+    _ ≤ (fmt.β : ℝ) ^ (1 - (fmt.prec : ℤ)) * |x| :=
+        mul_le_mul_of_nonneg_left h_epow_le (zpow_pos fmt.β_pos _).le
+
+theorem roundTZ_error (fmt : FloatFormat) {x : ℝ}
+    (hx : (fmt.β : ℝ) ^ (fmt.emin + (fmt.prec : ℤ) - 1) ≤ |x|) :
+    |roundTZ fmt x - x| ≤ machineEpsilon fmt * |x| :=
+  le_trans (roundTZ_error_abs fmt x).le (bpow_cexp_le_machineEpsilon_mul_abs fmt hx)
 
 noncomputable def roundTowardZeroFn (fmt : FloatFormat) : RoundingFn fmt where
   round := roundTZ fmt

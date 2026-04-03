@@ -238,4 +238,11 @@ theorem roundNNE_sub_abs_le (fmt : FloatFormat) (x : ℝ) :
     congr 1; rw [sub_mul, div_mul_cancel₀ _ (bpow_ne_zero fmt e)]
   linarith [mul_le_mul_of_nonneg_right hsub hb.le]
 
+theorem roundNNE_error_rel (fmt : FloatFormat) {x : ℝ}
+    (hx : (fmt.β : ℝ) ^ (fmt.emin + (fmt.prec : ℤ) - 1) ≤ |x|) :
+    |x - roundNNE fmt x| ≤ machineEpsilon fmt / 2 * |x| := by
+  have h1 := roundNNE_sub_abs_le fmt x
+  have h2 := bpow_cexp_le_machineEpsilon_mul_abs fmt hx
+  linarith
+
 end Flean

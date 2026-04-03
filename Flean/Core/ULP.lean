@@ -1,4 +1,4 @@
-import Flean.Core.RoundProps
+import Flean.Core.NearestAway
 
 /-!
 # Flean.Core.ULP
@@ -36,6 +36,22 @@ theorem roundTZ_error_lt_ulp (fmt : FloatFormat) (x : ℝ) :
 theorem roundTZ_abs_le (fmt : FloatFormat) (x : ℝ) :
     |roundTZ fmt x| ≤ |x| :=
   roundTZ_le_abs fmt x
+
+theorem roundDN_error_lt_ulp (fmt : FloatFormat) (x : ℝ) :
+    |roundDN fmt x - x| < ulp fmt x :=
+  roundDN_error_abs fmt x
+
+theorem roundUP_error_lt_ulp (fmt : FloatFormat) (x : ℝ) :
+    |roundUP fmt x - x| < ulp fmt x :=
+  roundUP_error_abs fmt x
+
+theorem roundNNE_error_le_half_ulp (fmt : FloatFormat) (x : ℝ) :
+    |x - roundNNE fmt x| ≤ ulp fmt x / 2 :=
+  roundNNE_sub_abs_le fmt x
+
+theorem roundNNA_error_le_half_ulp (fmt : FloatFormat) (x : ℝ) :
+    |x - roundNNA fmt x| ≤ ulp fmt x / 2 :=
+  roundNNA_sub_abs_le fmt x
 
 /-! ## ULP symmetry -/
 
