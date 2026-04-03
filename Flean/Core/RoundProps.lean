@@ -488,6 +488,5 @@ noncomputable def roundTowardZeroFn (fmt : FloatFormat) : RoundingFn fmt where
   rounds_to_repr := roundTZ_isRepresentable fmt
   idempotent := roundTZ_idempotent fmt
   monotone := roundTZ_monotone fmt
-  sign_preservation := roundTZ_neg fmt
 
 end Flean

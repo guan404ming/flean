@@ -41,7 +41,8 @@ noncomputable def minNormal (fmt : FloatFormat) : ℝ :=
 noncomputable def maxFinite (fmt : FloatFormat) : ℝ :=
   (fmt.β : ℝ) ^ fmt.emax * (2 - machineEpsilon fmt)
 
-/-- A rounding function maps any real to a representable float. -/
+/-- A valid rounding function (aligned with Flocq's Valid_rnd).
+    Maps any real to a representable float, is idempotent and monotone. -/
 structure RoundingFn (fmt : FloatFormat) where
   /-- The rounding function. -/
   round : ℝ → ℝ
@@ -51,7 +52,5 @@ structure RoundingFn (fmt : FloatFormat) where
   idempotent : ∀ (x : ℝ), round (round x) = round x
   /-- Rounding is monotone. -/
   monotone : Monotone round
-  /-- Rounding preserves sign: R(-x) = -R(x). -/
-  sign_preservation : ∀ (x : ℝ), round (-x) = -round x
 
 end Flean

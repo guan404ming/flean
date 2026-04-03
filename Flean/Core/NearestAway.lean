@@ -212,4 +212,18 @@ theorem roundNNA_monotone (fmt : FloatFormat) : Monotone (roundNNA fmt) := by
       _ ≤ roundDN fmt y := roundUP_le_roundDN_of_cexp_ne fmt hxy hce
       _ ≤ roundNNA fmt y := roundNNA_ge_roundDN fmt y
 
+/-! ## RoundingFn instances -/
+
+noncomputable def roundNearestEvenFn (fmt : FloatFormat) : RoundingFn fmt where
+  round := roundNNE fmt
+  rounds_to_repr := roundNNE_isRepresentable fmt
+  idempotent := roundNNE_idempotent fmt
+  monotone := roundNNE_monotone fmt
+
+noncomputable def roundNearestAwayFn (fmt : FloatFormat) : RoundingFn fmt where
+  round := roundNNA fmt
+  rounds_to_repr := roundNNA_isRepresentable fmt
+  idempotent := roundNNA_idempotent fmt
+  monotone := roundNNA_monotone fmt
+
 end Flean

@@ -328,4 +328,18 @@ theorem roundUP_le_roundDN_of_cexp_ne (fmt : FloatFormat) {x y : ℝ}
         (by linarith : -y ≤ -x) (by linarith : 0 ≤ -y) hce_neg
       rw [roundUP_neg, roundDN_neg] at h; linarith
 
+/-! ## RoundingFn instances -/
+
+noncomputable def roundTowardPositiveFn (fmt : FloatFormat) : RoundingFn fmt where
+  round := roundUP fmt
+  rounds_to_repr := roundUP_isRepresentable fmt
+  idempotent := roundUP_idempotent fmt
+  monotone := roundUP_monotone fmt
+
+noncomputable def roundTowardNegativeFn (fmt : FloatFormat) : RoundingFn fmt where
+  round := roundDN fmt
+  rounds_to_repr := roundDN_isRepresentable fmt
+  idempotent := roundDN_idempotent fmt
+  monotone := roundDN_monotone fmt
+
 end Flean
