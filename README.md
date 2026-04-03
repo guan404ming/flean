@@ -2,7 +2,7 @@
 
 A Lean 4 formalization of IEEE 754 floating-point arithmetic with mixed-precision analysis, built on Mathlib.
 
-230 theorems, zero `sorry`.
+261 theorems, zero `sorry`.
 
 ## Getting Started
 
@@ -21,26 +21,27 @@ Flean/
 ├── Binary/         Bit-level IEEE 754 (BitVec packing, classification, special values)
 ├── Arith/          Arithmetic operations (add, mul, div, sqrt, FMA, comparisons)
 ├── Bridge.lean     Refinement connecting bit-level and real-valued models
-└── Tactics/        Automation for mixed-precision proofs
+└── Tactics/        Automation (flean_cast_safe, flean_chain_bound,
+                    flean_numeric_bound, flean_quant_bound)
 ```
 
 ## Tactics
 
 ```lean
--- Prove cast chain exactness (widen-narrow, idempotence, absorption)
+-- Cast chain exactness (widen-narrow, idempotence, absorption)
 example {x : ℝ} (hx : isRepresentable binary16 x) :
     roundNNE binary16 (roundNNE binary32 x) = x := by
   flean_cast_safe
 
--- Derive error bounds for cast chains
-example (x : ℝ) :
-    |x - roundNNE binary64 x| ≤ |x - roundNNE binary32 x| := by
-  flean_cast_bound
+-- Error bounds for arbitrary-length chains
+example (fmts : List FloatFormat) (x : ℝ) :
+    |x - roundChain fmts x| ≤ chainBpowSum fmts x := by
+  flean_chain_bound
 
--- Quantization scheme error bounds
-example {x : ℝ} (hx : isRepresentable binary16 x) :
-    roundNNE binary32 x = x := by
-  flean_quant_bound
+-- Concrete numeric bounds: f16 relative error ≤ 1/2048 ≈ 4.88e-4
+example (x : ℝ) (hx : (2 : ℝ) ^ ((-14 : ℤ) + 11 - 1) ≤ |x|) :
+    |x - roundNNE binary16 x| ≤ 1 / 2048 * |x| := by
+  exact f16_relative_error x hx
 ```
 
 ## Comparison with Flocq
