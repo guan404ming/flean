@@ -119,9 +119,69 @@ theorem roundChain_cons (fmt : FloatFormat) (fmts : List FloatFormat) (x : ℝ) 
 theorem roundChain_singleton (fmt : FloatFormat) (x : ℝ) :
     roundChain [fmt] x = roundNNE fmt x := rfl
 
--- The tight general bound requires tracking intermediate values, which is
--- handled by the recursive tactic (flean_chain_bound) rather than a single
--- closed-form lemma.
+/-! ## General n-step error bound by induction
+
+The total error of an n-step chain is bounded by the sum of individual
+rounding errors. We define the "error sum" using the intermediate values
+of the chain, then prove the bound by induction on the format list. -/
+
+/-- The intermediate values of a chain: partial foldl results. -/
+noncomputable def chainIntermediates (fmts : List FloatFormat) (x : ℝ) : List ℝ :=
+  match fmts with
+  | [] => []
+  | fmt :: rest =>
+    let y := roundNNE fmt x
+    y :: chainIntermediates rest y
+
+/-- Sum of individual rounding errors along a chain. -/
+noncomputable def chainErrorSum (fmts : List FloatFormat) (x : ℝ) : ℝ :=
+  match fmts with
+  | [] => 0
+  | fmt :: rest =>
+    let y := roundNNE fmt x
+    |x - y| + chainErrorSum rest y
+
+theorem chainErrorSum_nonneg (fmts : List FloatFormat) (x : ℝ) :
+    0 ≤ chainErrorSum fmts x := by
+  induction fmts generalizing x with
+  | nil => simp [chainErrorSum]
+  | cons fmt rest ih => simp [chainErrorSum]; linarith [abs_nonneg (x - roundNNE fmt x), ih (roundNNE fmt x)]
+
+/-- General n-step chain error bound: the total error is at most the sum
+    of individual rounding errors. Proof by induction. -/
+theorem roundChain_error_le_sum (fmts : List FloatFormat) (x : ℝ) :
+    |x - roundChain fmts x| ≤ chainErrorSum fmts x := by
+  induction fmts generalizing x with
+  | nil => simp [roundChain, chainErrorSum]
+  | cons fmt rest ih =>
+    rw [roundChain_cons]; simp only [chainErrorSum]
+    set y := roundNNE fmt x
+    calc |x - roundChain rest y|
+        = |(x - y) + (y - roundChain rest y)| := by congr 1; ring
+      _ ≤ |x - y| + |y - roundChain rest y| := abs_add_le _ _
+      _ ≤ |x - y| + chainErrorSum rest y := by linarith [ih y]
+
+/-- Sum of bpow/2 at each step (using intermediate values for cexp). -/
+noncomputable def chainBpowSum (fmts : List FloatFormat) (x : ℝ) : ℝ :=
+  match fmts with
+  | [] => 0
+  | fmt :: rest =>
+    bpow fmt (cexp fmt x) / 2 + chainBpowSum rest (roundNNE fmt x)
+
+/-- The chain error sum is bounded by the sum of bpow/2 at each step. -/
+theorem chainErrorSum_le_bpow_sum (fmts : List FloatFormat) (x : ℝ) :
+    chainErrorSum fmts x ≤ chainBpowSum fmts x := by
+  induction fmts generalizing x with
+  | nil => simp [chainErrorSum, chainBpowSum]
+  | cons fmt rest ih =>
+    simp only [chainErrorSum, chainBpowSum]
+    linarith [roundNNE_sub_abs_le fmt x, ih (roundNNE fmt x)]
+
+/-- The main general theorem: total chain error ≤ sum of ULP/2 at each step.
+    This works for ANY chain length. -/
+theorem roundChain_error_le_bpow_sum (fmts : List FloatFormat) (x : ℝ) :
+    |x - roundChain fmts x| ≤ chainBpowSum fmts x :=
+  le_trans (roundChain_error_le_sum fmts x) (chainErrorSum_le_bpow_sum fmts x)
 
 /-! ## Idempotence for chains of the same format -/
 

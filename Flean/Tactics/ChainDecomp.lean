@@ -32,6 +32,8 @@ syntax (name := fleanChainBound) "flean_chain_bound" : tactic
 def evalFleanChainBound : Tactic := fun _ => do
   let tactics ← `(tactic|
     first
+    -- General n-step: roundChain form
+    | exact roundChain_error_le_bpow_sum _ _
     -- 1-step
     | exact roundNNE_sub_abs_le _ _
     -- 2-step ULP bound
@@ -47,6 +49,8 @@ def evalFleanChainBound : Tactic := fun _ => do
     -- 3-step triangle
     | (linarith [chain_error_3 _ _ _ _, roundNNE_sub_abs_le _ _,
                  roundNNE_sub_abs_le _ _, roundNNE_sub_abs_le _ _])
+    -- General error sum
+    | exact roundChain_error_le_sum _ _
     -- Relative error
     | exact roundNNE_error_rel _ ‹_›
     -- Monotonicity
@@ -84,5 +88,16 @@ example (x : ℝ) :
       bpow binary32 (cexp binary32 x) / 2 +
       bpow binary16 (cexp binary16 (roundNNE binary32 x)) / 2 :=
   chain_error_2_ulp binary16 binary32 x
+
+-- Demo: general n-step chain via roundChain (works for ANY length)
+example (fmts : List FloatFormat) (x : ℝ) :
+    |x - roundChain fmts x| ≤ chainBpowSum fmts x := by
+  flean_chain_bound
+
+-- Demo: 5-step chain via roundChain
+example (x : ℝ) :
+    |x - roundChain [binary64, binary32, binary16, binary32, binary16] x| ≤
+      chainBpowSum [binary64, binary32, binary16, binary32, binary16] x := by
+  flean_chain_bound
 
 end Flean
