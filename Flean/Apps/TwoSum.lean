@@ -291,12 +291,12 @@ theorem fast2Sum_err_repr {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
           _ < _ := h4
       exact this
     exact ⟨d, eb, hval_err, hd_bound, heb⟩
-  · -- Case esa < eb: the exponent of (s-a) is smaller than that of b.
-    -- The proof at exponent esa requires showing the significand of
-    -- b at exponent esa (= mb * β^(eb-esa)) minus msa stays < β^p.
-    -- This holds for β=2 because the "bit gap" between b's low bits
-    -- and the rounding grid ensures the difference fits in p digits.
-    -- Full proof requires the binary gap lemma (Boldo & Melquiond, §6.3).
+  · -- Case esa < eb: the rounding error (a+b)-s is representable at exponent
+    -- min(ea,eb) using the binary gap structure. The significand of a+b at
+    -- min(ea,eb) has a gap of zeros between b's bits and a's bits, ensuring
+    -- the rounded remainder stays within p digits.
+    -- Full proof requires detailed binary representation analysis
+    -- (Boldo & Melquiond, Computer Arithmetic and Formal Proofs, §6.3).
     push Not at hesa_ge
     sorry
 
