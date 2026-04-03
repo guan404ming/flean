@@ -120,10 +120,60 @@ theorem dekker_sub_repr_neg_b {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
       apply neg_isRepresentable
       exact sterbenz_repr fmt ha' hs_repr ha0 hs0 (by linarith) (by linarith)
     · -- ea = emin: subnormal edge case.
-      -- Both a and s are multiples of β^emin with significands < β^p.
-      -- Since 0 ≤ s ≤ a, the difference a - s has significand ≤ ma < β^p.
+      -- Both a and s are multiples of β^emin. Since 0 ≤ s ≤ a,
+      -- the difference a - s has significand ≤ ma < β^p at exponent emin.
       push Not at hea_gt
-      sorry
+      have hea_eq : ea = fmt.emin := le_antisymm (by omega) hea
+      -- s is also representable
+      obtain ⟨ms, es, hval_s, hms, hes⟩ := hs_repr
+      have hβ_pos : (0 : ℝ) < (fmt.β : ℝ) := by rw [hβ]; norm_num
+      have hβ_ne : (fmt.β : ℝ) ≠ 0 := ne_of_gt hβ_pos
+      -- Significand of a - s at exponent emin
+      -- Use the existing Sterbenz proof infrastructure.
+      -- Key: a and s are both representable with 0 ≤ s ≤ a.
+      -- At the emin grid, a - s has bounded significand.
+      -- We construct the representability witness directly.
+      have hma0 : 0 ≤ ma := by
+        by_contra h; push Not at h
+        have : a < 0 := by
+          rw [hval_a]; exact mul_neg_of_neg_of_pos (by exact_mod_cast h) (zpow_pos hβ_pos ea)
+        linarith
+      -- Express s at exponent emin: s = ms' * β^emin
+      have hes_ge : fmt.emin ≤ es := hes
+      -- ms' is the significand of s at exponent emin
+      let ms' := ms * (fmt.β : ℤ) ^ (es - fmt.emin).toNat
+      have hval_s' : s = (ms' : ℝ) * (fmt.β : ℝ) ^ fmt.emin := by
+        change s = ((ms * (fmt.β : ℤ) ^ (es - fmt.emin).toNat : ℤ) : ℝ) * (fmt.β : ℝ) ^ fmt.emin
+        have hnn : (0 : ℤ) ≤ es - fmt.emin := by omega
+        rw [hs_def, hval_s]; push_cast
+        rw [mul_assoc, ← zpow_natCast, ← zpow_add₀ hβ_ne, Int.toNat_of_nonneg hnn,
+            show es - fmt.emin + fmt.emin = es from by omega]
+      have hbp := zpow_pos hβ_pos fmt.emin
+      -- ms' ≥ 0 since s ≥ 0
+      have hms'0 : 0 ≤ ms' := by
+        have : (0 : ℝ) ≤ (ms' : ℝ) := by
+          have h1 : 0 ≤ s := hs0
+          rw [hval_s'] at h1
+          exact nonneg_of_mul_nonneg_left h1 hbp
+        exact_mod_cast this
+      -- ms' ≤ ma since s ≤ a
+      have hms'_le : ms' ≤ ma := by
+        have : (ms' : ℝ) ≤ (ma : ℝ) := by
+          rw [← sub_nonneg]
+          have h1 : 0 ≤ a - s := by linarith
+          rw [hval_a, hea_eq, hval_s'] at h1
+          have : 0 ≤ ((ma : ℝ) - (ms' : ℝ)) * (fmt.β : ℝ) ^ fmt.emin := by linarith
+          exact nonneg_of_mul_nonneg_left this hbp
+        exact_mod_cast this
+      -- a - s = (ma - ms') * β^emin
+      have hval_diff : a - s = ((ma - ms' : ℤ) : ℝ) * (fmt.β : ℝ) ^ fmt.emin := by
+        rw [hval_a, hea_eq, hval_s']; push_cast; ring
+      rw [show s - a = -(a - s) from by ring, hval_diff]
+      refine ⟨-(ma - ms'), fmt.emin, by push_cast; ring, ?_, le_refl _⟩
+      rw [abs_neg, abs_of_nonneg (show (0 : ℤ) ≤ ma - ms' by omega)]
+      calc ma - ms' ≤ ma := by omega
+        _ ≤ |ma| := le_abs_self _
+        _ < _ := hma
 
 /-- Dekker's lemma (general): when `|b| ≤ |a|` and β = 2. -/
 theorem dekker_sub_repr {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
@@ -168,7 +218,87 @@ theorem fast2Sum_err_repr {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
     (hab : |b| ≤ |a|) :
     let s := roundNNE fmt (a + b)
     isRepresentable fmt (b - (s - a)) := by
-  sorry
+  -- b - (s - a) = (a + b) - s is the rounding error.
+  -- Strategy: s - a is representable (Dekker). Express b and (s-a) at a common
+  -- exponent and show the difference's significand is bounded.
+  set s := roundNNE fmt (a + b)
+  -- s - a is representable
+  have hsa_repr := dekker_sub_repr hβ ha hb hab
+  -- b - (s - a) = (a + b) - s
+  have herr_eq : b - (s - a) = (a + b) - s := by ring
+  -- |(a+b) - s| ≤ |b| (nearest property, a is representable)
+  have herr_le : |b - (s - a)| ≤ |b| := by
+    rw [herr_eq]
+    have h := roundNNE_nearest fmt (a + b) ha
+    simp only [add_sub_cancel_left] at h
+    rwa [show (a + b) - s = -(s - (a + b)) from by ring, abs_neg,
+         show s - (a + b) = -(a + b - s) from by ring, abs_neg]
+  -- Get representations
+  obtain ⟨mb, eb, hval_b, hmb, heb⟩ := hb
+  obtain ⟨msa, esa, hval_sa, hmsa, hesa⟩ := hsa_repr
+  -- At exponent e = min(eb, esa): both b and (s-a) are integer multiples of β^e
+  have hβ_pos : (0 : ℝ) < (fmt.β : ℝ) := by rw [hβ]; norm_num
+  have hβ_ne : (fmt.β : ℝ) ≠ 0 := ne_of_gt hβ_pos
+  -- Express b - (s-a) at exponent min(eb, esa)
+  -- The significand is bounded by |err|/β^e ≤ |b|/β^e ≤ |mb| * β^(eb-e)
+  -- When e = eb: significand ≤ |mb| < β^p. Done.
+  -- When e = esa < eb: significand could be larger. But since |err| ≤ |b| < β^(eb+p):
+  -- significand = |err|/β^esa < β^(eb+p)/β^esa = β^(eb-esa+p). Could be > β^p.
+  -- Need a tighter bound or a different exponent.
+  -- Key insight: |err| ≤ |b|. And b is representable with |mb| < β^p at exponent eb.
+  -- The error is ALSO representable at exponent eb (since it divides evenly):
+  -- err = b - (s-a). Both b and s-a are multiples of β^min(eb,esa) = β^(min eb esa).
+  -- At exponent eb: err/β^eb = mb - (s-a)/β^eb.
+  -- (s-a)/β^eb = msa * β^(esa-eb). Integer iff esa ≥ eb.
+  -- When esa ≥ eb: err/β^eb = mb - msa * β^(esa-eb), integer.
+  --   |err/β^eb| ≤ |mb| < β^p (since |err| ≤ |b| = |mb|*β^eb). ✓
+  -- When esa < eb: (s-a)/β^eb not integer. Use exponent esa instead.
+  --   err/β^esa = mb * β^(eb-esa) - msa, integer.
+  --   |err/β^esa| ≤ |err|/β^esa ≤ |b|/β^esa = |mb| * β^(eb-esa).
+  --   Could be ≥ β^p. Need the β=2 gap argument (same as subnormal case).
+  -- For simplicity, handle the common case esa ≥ eb, sorry the other.
+  by_cases hesa_ge : eb ≤ esa
+  · -- Common case: exponent of (s-a) ≥ exponent of b
+    -- err at exponent eb has integer significand bounded by |mb|
+    set d := mb - msa * (fmt.β : ℤ) ^ (esa - eb).toNat
+    -- Use repr_diff_at_lower_exp or direct algebra
+    have hval_sa' : s - a = (msa : ℝ) * (fmt.β : ℝ) ^ esa := hval_sa
+    have hnn : (0 : ℤ) ≤ esa - eb := by omega
+    have hval_err : b - (s - a) = (d : ℝ) * (fmt.β : ℝ) ^ eb := by
+      have : b - (s - a) = ((mb : ℝ) - (msa : ℝ) * (fmt.β : ℝ) ^ (esa - eb)) * (fmt.β : ℝ) ^ eb := by
+        rw [hval_b, hval_sa']
+        have : (msa : ℝ) * (fmt.β : ℝ) ^ esa =
+            (msa : ℝ) * (fmt.β : ℝ) ^ (esa - eb) * (fmt.β : ℝ) ^ eb := by
+          rw [mul_assoc, ← zpow_add₀ hβ_ne, show esa - eb + eb = esa from by omega]
+        linarith
+      rw [this]; congr 1
+      simp only [d]; push_cast
+      rw [← zpow_natCast, Int.toNat_of_nonneg hnn]
+    -- |d| < β^p since |err| ≤ |b| = |mb| * β^eb
+    have hd_bound : |d| < (fmt.β : ℤ) ^ fmt.prec := by
+      have hbp := zpow_pos hβ_pos eb
+      -- |b - (s-a)| ≤ |b|, rewrite using value equations
+      have h1 : |b - (s - a)| = |(d : ℝ)| * (fmt.β : ℝ) ^ eb := by
+        rw [hval_err, abs_mul, abs_of_pos hbp]
+      have h2 : |b| = |(mb : ℝ)| * (fmt.β : ℝ) ^ eb := by
+        rw [hval_b, abs_mul, abs_of_pos hbp]
+      have h3 : |(d : ℝ)| ≤ |(mb : ℝ)| := by
+        have := herr_le; rw [h1, h2] at this
+        exact le_of_mul_le_mul_right this hbp
+      have : |(d : ℤ)| < (fmt.β : ℤ) ^ fmt.prec := by
+        have h4 : |(mb : ℤ)| < (fmt.β : ℤ) ^ fmt.prec := hmb
+        calc |(d : ℤ)| ≤ |(mb : ℤ)| := by exact_mod_cast h3
+          _ < _ := h4
+      exact this
+    exact ⟨d, eb, hval_err, hd_bound, heb⟩
+  · -- Case esa < eb: the exponent of (s-a) is smaller than that of b.
+    -- The proof at exponent esa requires showing the significand of
+    -- b at exponent esa (= mb * β^(eb-esa)) minus msa stays < β^p.
+    -- This holds for β=2 because the "bit gap" between b's low bits
+    -- and the rounding grid ensures the difference fits in p digits.
+    -- Full proof requires the binary gap lemma (Boldo & Melquiond, §6.3).
+    push Not at hesa_ge
+    sorry
 
 /-- **Fast2Sum correctness**: `a + b = s + t` exactly when `|a| ≥ |b|` and β = 2. -/
 theorem fast2Sum_exact {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
