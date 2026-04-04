@@ -1,7 +1,4 @@
 import Flean.Core.RoundProps
-import Flean.Core.DirectedRound
-import Flean.Core.NearestEven
-import Flean.Core.NearestAway
 
 /-!
 # Flean.Core.GenericRound
@@ -265,6 +262,30 @@ theorem roundGenericNearest_error_rel (zr : ZrndNearest) (fmt : FloatFormat) {x 
     _ ≤ machineEpsilon fmt / 2 * |x| := by
         have h := bpow_cexp_le_machineEpsilon_mul_abs fmt hx; linarith
 
+/-- Any ZrndFn satisfies zrnd y ≤ ⌈y⌉: follows from monotonicity + integer fixing. -/
+private theorem zrnd_le_ceil (zr : ZrndFn) (y : ℝ) : zr.zrnd y ≤ ⌈y⌉ := by
+  have h := zr.zrnd_monotone (Int.le_ceil y)
+  simp only [zr.zrnd_intCast] at h; exact h
+
+/-- Any ZrndFn satisfies ⌊y⌋ ≤ zrnd y: follows from monotonicity + integer fixing. -/
+private theorem floor_le_zrnd (zr : ZrndFn) (y : ℝ) : ⌊y⌋ ≤ zr.zrnd y := by
+  have h := zr.zrnd_monotone (Int.floor_le y)
+  simp only [zr.zrnd_intCast] at h; exact h
+
+/-- Generic rounding is bounded above by roundUP. -/
+theorem roundGeneric_le_roundUP (zr : ZrndFn) (fmt : FloatFormat) (x : ℝ) :
+    roundGeneric zr fmt x ≤ roundUP fmt x := by
+  unfold roundGeneric roundUP; dsimp only
+  apply mul_le_mul_of_nonneg_right _ (bpow_pos fmt _).le
+  exact_mod_cast zrnd_le_ceil zr (x / bpow fmt (cexp fmt x))
+
+/-- Generic rounding is bounded below by roundDN. -/
+theorem roundGeneric_ge_roundDN (zr : ZrndFn) (fmt : FloatFormat) (x : ℝ) :
+    roundDN fmt x ≤ roundGeneric zr fmt x := by
+  unfold roundGeneric roundDN; dsimp only
+  apply mul_le_mul_of_nonneg_right _ (bpow_pos fmt _).le
+  exact_mod_cast floor_le_zrnd zr (x / bpow fmt (cexp fmt x))
+
 /-- Generic rounding to a RoundingFn. -/
 noncomputable def roundGenericFn (zr : ZrndFn) (fmt : FloatFormat)
     (hmon : Monotone (roundGeneric zr fmt)) : RoundingFn fmt where
@@ -272,5 +293,60 @@ noncomputable def roundGenericFn (zr : ZrndFn) (fmt : FloatFormat)
   rounds_to_repr := roundGeneric_isRepresentable zr fmt
   idempotent := roundGeneric_idempotent zr fmt
   monotone := hmon
+
+/-! ## Scaled mantissa -/
+
+/-- The scaled mantissa: x divided by β^(cexp x). Corresponds to Flocq's `scaled_mantissa`. -/
+noncomputable def scaledMantissa (fmt : FloatFormat) (x : ℝ) : ℝ :=
+  x / bpow fmt (cexp fmt x)
+
+theorem scaledMantissa_abs_lt (fmt : FloatFormat) (x : ℝ) :
+    |scaledMantissa fmt x| < (fmt.β : ℝ) ^ fmt.prec :=
+  scaled_abs_lt fmt x
+
+theorem roundGeneric_eq_scaledMantissa (zr : ZrndFn) (fmt : FloatFormat) (x : ℝ) :
+    roundGeneric zr fmt x = (zr.zrnd (scaledMantissa fmt x) : ℝ) * bpow fmt (cexp fmt x) := rfl
+
+/-! ## Sandwich bounds (round_DN_or_UP) -/
+
+/-- Any ZrndFn rounds above the floor. -/
+theorem ZrndFn.zrnd_ge_floor (zr : ZrndFn) (x : ℝ) : ⌊x⌋ ≤ zr.zrnd x :=
+  floor_le_zrnd zr x
+
+/-- Any ZrndFn rounds below the ceiling. -/
+theorem ZrndFn.zrnd_le_ceil' (zr : ZrndFn) (x : ℝ) : zr.zrnd x ≤ ⌈x⌉ :=
+  zrnd_le_ceil zr x
+
+/-! ## Nonzero preservation -/
+
+/-- If |x| ≥ bpow(cexp x), then roundGeneric x ≠ 0. -/
+theorem roundGeneric_ne_zero (zr : ZrndFn) (fmt : FloatFormat) {x : ℝ}
+    (hx : bpow fmt (cexp fmt x) ≤ |x|) : roundGeneric zr fmt x ≠ 0 := by
+  unfold roundGeneric
+  apply mul_ne_zero _ (bpow_ne_zero fmt _)
+  -- Show the integer part is nonzero.
+  set y := x / bpow fmt (cexp fmt x)
+  have hbp := bpow_pos fmt (cexp fmt x)
+  -- |y| ≥ 1
+  have hy_abs : 1 ≤ |y| := by
+    rw [abs_div, abs_of_pos hbp]
+    rwa [le_div_iff₀ hbp, one_mul]
+  intro h
+  have hzero : zr.zrnd y = 0 := by exact_mod_cast h
+  by_cases hpos : 0 ≤ y
+  · -- y ≥ 0, so y ≥ 1
+    have hy1 : 1 ≤ y := by rwa [abs_of_nonneg hpos] at hy_abs
+    have hge : (1 : ℤ) ≤ zr.zrnd y := by
+      have h1 : zr.zrnd ((1 : ℤ) : ℝ) ≤ zr.zrnd y := zr.zrnd_monotone (by exact_mod_cast hy1)
+      rwa [zr.zrnd_intCast] at h1
+    omega
+  · -- y < 0, so y ≤ -1
+    have hneg : y < 0 := not_le.mp hpos
+    have hy1 : y ≤ -1 := by
+      have := abs_of_neg hneg; rw [this] at hy_abs; linarith
+    have hle : zr.zrnd y ≤ -1 := by
+      have h1 : zr.zrnd y ≤ zr.zrnd ((-1 : ℤ) : ℝ) := zr.zrnd_monotone (by exact_mod_cast hy1)
+      rwa [zr.zrnd_intCast] at h1
+    omega
 
 end Flean

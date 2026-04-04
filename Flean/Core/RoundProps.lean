@@ -169,6 +169,71 @@ noncomputable def round (fmt : FloatFormat) (mode : RoundingMode) (x : ℝ) : �
   | .roundNearestTiesToEven => roundNNE fmt x
   | .roundNearestTiesAway => roundNNA fmt x
 
+/-! ## Integer-level properties of roundNearestEven -/
+
+theorem frac_nonneg (x : ℝ) : 0 ≤ x - ⌊x⌋ :=
+  sub_nonneg.mpr (Int.floor_le x)
+
+theorem frac_lt_one (x : ℝ) : x - ⌊x⌋ < 1 := by
+  linarith [Int.lt_floor_add_one x]
+
+theorem roundNearestEven_intCast (n : ℤ) : roundNearestEven (n : ℝ) = n := by
+  unfold roundNearestEven; dsimp only; simp [Int.floor_intCast, sub_self]
+
+/-- roundNearestEven is within 1/2 of its input. -/
+theorem roundNearestEven_sub_abs (x : ℝ) :
+    |x - (roundNearestEven x : ℝ)| ≤ 1/2 := by
+  unfold roundNearestEven; dsimp only
+  set f := ⌊x⌋; set r := x - (f : ℝ)
+  have hr_nn := frac_nonneg x
+  have hr_lt := frac_lt_one x
+  show |x - ↑(if r < 1/2 then f else if r > 1/2 then f + 1 else
+    if f % 2 == 0 then f else f + 1)| ≤ 1/2
+  by_cases h1 : r < 1/2
+  · simp only [h1, ite_true]; show |r| ≤ 1/2
+    rw [abs_of_nonneg hr_nn]; linarith
+  · by_cases h2 : r > 1/2
+    · simp only [h1, h2, ite_true, ite_false]; push_cast
+      rw [show x - ((f : ℝ) + 1) = r - 1 from by simp [r]; ring]
+      rw [abs_of_nonpos (by linarith)]; linarith
+    · have hr_eq : r = 1/2 := le_antisymm (by linarith) (by linarith)
+      simp only [h1, h2, ite_false]
+      split_ifs
+      · rw [abs_of_nonneg hr_nn]; linarith
+      · push_cast; rw [show x - ((f : ℝ) + 1) = r - 1 from by simp [r]; ring, hr_eq]; norm_num
+
+/-! ## Integer-level properties of roundNearestAway -/
+
+theorem roundNearestAway_intCast (n : ℤ) : roundNearestAway (n : ℝ) = n := by
+  unfold roundNearestAway
+  by_cases hn : (n : ℝ) ≥ 0
+  · simp only [hn, ite_true]
+    have h1 : (n : ℝ) ≤ (n : ℝ) + 1/2 := by linarith
+    have h2 : (n : ℝ) + 1/2 < (n : ℝ) + 1 := by linarith
+    exact le_antisymm
+      (Int.lt_add_one_iff.mp (Int.floor_lt.mpr (by push_cast [Int.cast_add]; linarith)))
+      (Int.le_floor.mpr (by linarith))
+  · simp only [hn, ite_false]
+    exact le_antisymm
+      (Int.ceil_le.mpr (by linarith))
+      (by have : (n : ℤ) - 1 < ⌈(n : ℝ) - 1/2⌉ := by
+            exact_mod_cast lt_of_lt_of_le (by linarith : (n : ℝ) - 1 < (n : ℝ) - 1/2) (Int.le_ceil _)
+          omega)
+
+theorem roundNearestAway_sub_abs (x : ℝ) :
+    |x - (roundNearestAway x : ℝ)| ≤ 1/2 := by
+  unfold roundNearestAway
+  by_cases hx : x ≥ 0
+  · simp only [hx, ite_true]; set n := ⌊x + 1/2⌋
+    have h1 : (n : ℝ) ≤ x + 1/2 := Int.floor_le _
+    have h2 : x + 1/2 < (n : ℝ) + 1 := Int.lt_floor_add_one _
+    rw [abs_le]; constructor <;> linarith
+  · push Not at hx; simp only [show ¬(x ≥ 0) from by linarith, ite_false]
+    set n := ⌈x - 1/2⌉
+    have h1 : x - 1/2 ≤ (n : ℝ) := Int.le_ceil _
+    have h2 : (n : ℝ) < x - 1/2 + 1 := Int.ceil_lt_add_one _
+    rw [abs_le]; constructor <;> linarith
+
 /-! ## Properties -/
 
 theorem roundTZ_zero (fmt : FloatFormat) : roundTZ fmt 0 = 0 := by

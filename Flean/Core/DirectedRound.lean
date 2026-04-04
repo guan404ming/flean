@@ -1,4 +1,4 @@
-import Flean.Core.RoundProps
+import Flean.Core.GenericRound
 
 /-!
 # Flean.Core.DirectedRound
@@ -50,96 +50,30 @@ theorem roundDN_eq_roundTZ_nonneg (fmt : FloatFormat) {x : ℝ} (hx : 0 ≤ x) :
 /-! ## Representability -/
 
 theorem roundDN_isRepresentable (fmt : FloatFormat) (x : ℝ) :
-    isRepresentable fmt (roundDN fmt x) := by
-  by_cases hx : 0 ≤ x
-  · rw [roundDN_eq_roundTZ_nonneg fmt hx]; exact roundTZ_isRepresentable fmt x
-  · -- x < 0: use duality with roundUP on -x > 0
-    push Not at hx
-    -- roundDN(x) = -roundUP(-x) = -(roundTZ(-x) or roundTZ(-x) + β^e)
-    -- Since -x > 0, roundTZ(-x) is repr. roundDN(x) = -roundUP(-x).
-    -- We need roundUP(-x) is repr for -x > 0.
-    -- roundUP(-x) = ⌈(-x)/β^e⌉ * β^e where e = cexp(-x).
-    -- ⌈(-x)/β^e⌉ ≤ ⌈β^p⌉ = β^p (since (-x)/β^e < β^p and β^p is integer).
-    -- If ⌈(-x)/β^e⌉ < β^p: repr at e.
-    -- If ⌈(-x)/β^e⌉ = β^p: repr at e+1 (renormalize).
-    -- This is the roundUP edge case for positive inputs.
-    -- Alternatively: -roundUP(-x) = roundDN(x), and we can show roundDN(x) is repr
-    -- by showing ⌊x/β^e⌋ has |·| ≤ β^p.
-    -- For x < 0: ⌊x/β^e⌋ ∈ [-β^p, -1].
-    -- If > -β^p: |·| < β^p, repr at e.
-    -- If = -β^p: repr at e+1.
-    -- Just use: roundDN(x) = -roundUP(-x), and -x > 0, roundTZ(-x) is nonneg repr.
-    -- roundUP(-x) = roundTZ(-x) + correction (0 or β^e).
-    -- If correction = 0: roundUP(-x) = roundTZ(-x), repr.
-    -- If correction = β^e: roundUP(-x) = roundTZ(-x) + β^e = (ztrunc((-x)/β^e) + 1) * β^e.
-    --   ztrunc((-x)/β^e) < β^p, so ztrunc + 1 ≤ β^p.
-    --   If < β^p: repr. If = β^p: renormalize.
-    -- This is getting complex. Let me just show roundUP is repr for nonneg inputs directly.
-    suffices h : isRepresentable fmt (roundUP fmt (-x)) by
-      rw [show roundDN fmt x = -(roundUP fmt (-x)) from by rw [← roundDN_neg]; ring_nf]
-      exact neg_isRepresentable h
-    -- roundUP(-x) for -x > 0
-    have hpos : 0 < -x := by linarith
-    unfold roundUP; dsimp only; set e := cexp fmt (-x)
-    set n := ⌈(-x) / bpow fmt e⌉
-    have hn0 : 0 < n := by
-      exact_mod_cast Int.ceil_pos.mpr (div_pos hpos (bpow_pos fmt e))
-    have habs := scaled_abs_lt fmt (-x)
-    have hn_le : n ≤ (fmt.β : ℤ) ^ fmt.prec := by
-      have h1 : (-x) / bpow fmt e < (fmt.β : ℝ) ^ fmt.prec := by
-        calc (-x) / bpow fmt e ≤ |(-x) / bpow fmt e| := le_abs_self _
-          _ < _ := habs
-      have : (n : ℝ) ≤ (-x) / bpow fmt e + 1 := by linarith [Int.ceil_lt_add_one ((-x) / bpow fmt e)]
-      exact_mod_cast show n ≤ (fmt.β : ℤ) ^ fmt.prec from by
-        have : (n : ℝ) < (fmt.β : ℝ) ^ fmt.prec + 1 := by linarith
-        exact_mod_cast Int.lt_add_one_iff.mp (by exact_mod_cast this)
-    by_cases hn_lt : n < (fmt.β : ℤ) ^ fmt.prec
-    · exact ⟨n, e, rfl, by rwa [abs_of_nonneg hn0.le], cexp_emin_le fmt (-x)⟩
-    · -- n = β^p: renormalize
-      have hn_eq : n = (fmt.β : ℤ) ^ fmt.prec := le_antisymm hn_le (not_lt.mp hn_lt)
-      refine ⟨(fmt.β : ℤ) ^ (fmt.prec - 1), e + 1, ?_, ?_, by linarith [cexp_emin_le fmt (-x)]⟩
-      · unfold bpow; rw [hn_eq]; push_cast [zpow_natCast]
-        have hp := fmt.hprec
-        conv_lhs => rw [show fmt.prec = (fmt.prec - 1) + 1 from by omega, pow_succ]
-        rw [zpow_add₀ (FloatFormat.β_ne_zero fmt), zpow_one]
-        ring
-      · rw [abs_of_nonneg (by positivity)]
-        have hp := fmt.hprec; have hβ := fmt.hβ
-        exact_mod_cast Nat.pow_lt_pow_right (by omega) (by omega)
+    isRepresentable fmt (roundDN fmt x) :=
+  roundGeneric_isRepresentable zrndDN fmt x
 
 theorem roundUP_isRepresentable (fmt : FloatFormat) (x : ℝ) :
-    isRepresentable fmt (roundUP fmt x) := by
-  rw [show roundUP fmt x = -roundDN fmt (-x) from by rw [roundDN_neg]; ring]
-  exact neg_isRepresentable (roundDN_isRepresentable fmt (-x))
+    isRepresentable fmt (roundUP fmt x) :=
+  roundGeneric_isRepresentable zrndUP fmt x
 
 /-! ## Idempotence -/
 
 theorem roundDN_repr_fixed (fmt : FloatFormat) {x : ℝ}
-    (hx : isRepresentable fmt x) : roundDN fmt x = x := by
-  obtain ⟨m, e, hval, hm, he⟩ := hx
-  by_cases hm_ne : m = 0
-  · subst hm_ne; simp at hval; rw [hval, roundDN_zero]
-  · rw [hval]; unfold roundDN; dsimp only
-    set ce := cexp fmt ((m : ℝ) * (fmt.β : ℝ) ^ e)
-    have hce_le : ce ≤ e := cexp_le_of_repr fmt hm_ne hm he
-    have ⟨n, hn⟩ : ∃ (n : ℤ), (m : ℝ) * (fmt.β : ℝ) ^ e / bpow fmt ce = (n : ℝ) :=
-      ⟨m * (fmt.β : ℤ) ^ (e - ce).toNat, by
-        unfold bpow; push_cast; rw [mul_div_assoc, ← zpow_sub₀ fmt.β_ne_zero, ← zpow_natCast]
-        congr 2; exact (Int.toNat_of_nonneg (by omega)).symm⟩
-    rw [hn, Int.floor_intCast, ← hn, div_mul_cancel₀ _ (bpow_ne_zero fmt ce)]
+    (hx : isRepresentable fmt x) : roundDN fmt x = x :=
+  roundGeneric_repr_fixed zrndDN fmt hx
 
 theorem roundUP_repr_fixed (fmt : FloatFormat) {x : ℝ}
-    (hx : isRepresentable fmt x) : roundUP fmt x = x := by
-  rw [show roundUP fmt x = -roundDN fmt (-x) from by rw [roundDN_neg]; ring]
-  rw [roundDN_repr_fixed fmt (neg_isRepresentable hx)]; ring
+    (hx : isRepresentable fmt x) : roundUP fmt x = x :=
+  roundGeneric_repr_fixed zrndUP fmt hx
 
 theorem roundDN_idempotent (fmt : FloatFormat) (x : ℝ) :
     roundDN fmt (roundDN fmt x) = roundDN fmt x :=
-  roundDN_repr_fixed fmt (roundDN_isRepresentable fmt x)
+  roundGeneric_idempotent zrndDN fmt x
 
 theorem roundUP_idempotent (fmt : FloatFormat) (x : ℝ) :
     roundUP fmt (roundUP fmt x) = roundUP fmt x :=
-  roundUP_repr_fixed fmt (roundUP_isRepresentable fmt x)
+  roundGeneric_idempotent zrndUP fmt x
 
 /-! ## Key lemma for monotonicity -/
 
@@ -370,6 +304,23 @@ theorem roundUP_error_rel (fmt : FloatFormat) {x : ℝ}
     (hx : (fmt.β : ℝ) ^ (fmt.emin + (fmt.prec : ℤ) - 1) ≤ |x|) :
     |roundUP fmt x - x| ≤ machineEpsilon fmt * |x| :=
   le_trans (roundUP_error_abs fmt x).le (bpow_cexp_le_machineEpsilon_mul_abs fmt hx)
+
+/-! ## Generic monotonicity -/
+
+/-- Any generic rounding is monotone. Uses DN/UP sandwich + cexp boundary crossing. -/
+theorem roundGeneric_monotone (zr : ZrndFn) (fmt : FloatFormat) :
+    Monotone (roundGeneric zr fmt) := by
+  intro x y hxy
+  by_cases hce : cexp fmt x = cexp fmt y
+  · -- Same cexp: direct from zrnd monotonicity
+    unfold roundGeneric; rw [hce]
+    apply mul_le_mul_of_nonneg_right _ (bpow_pos fmt _).le
+    exact_mod_cast zr.zrnd_monotone (div_le_div_of_nonneg_right hxy (bpow_pos fmt _).le)
+  · -- Different cexp: sandwich via DN/UP
+    calc roundGeneric zr fmt x
+        ≤ roundUP fmt x := roundGeneric_le_roundUP zr fmt x
+      _ ≤ roundDN fmt y := roundUP_le_roundDN_of_cexp_ne fmt hxy hce
+      _ ≤ roundGeneric zr fmt y := roundGeneric_ge_roundDN zr fmt y
 
 /-! ## RoundingFn instances -/
 
