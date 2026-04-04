@@ -1,7 +1,7 @@
-import Flean.Apps.TwoSum
+import Flean.Apps.EFT.TwoSum
 
 /-!
-# Flean.Apps.ExpansionSum
+# Flean.Apps.EFT.ExpansionSum
 
 A case study in error-free transformed summation via floating-point expansions.
 

@@ -1,7 +1,7 @@
 import Flean.Core.GenericRound
 
 /-!
-# Flean.Core.GenericFormat
+# Flean.Core.Representable
 
 The `generic_format` predicate: a canonical characterization of representable numbers.
 More flexible than `isRepresentable` for generic proofs, since it works directly

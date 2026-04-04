@@ -1,29 +1,9 @@
-import Flean.Apps.AdaptiveExpansionSum
+import Flean.Apps.EFT.ExpansionSum
 
 /-!
-# Flean.Apps.KahanSum
+# Flean.Apps.Compensated.Kahan
 
-Single-step verification of the Kahan compensated summation kernel.
-
-The classical Kahan update is
-
-```
-y  = fl(x - c)
-t  = fl(s + y)
-c' = fl((t - s) - y)
-s' = t
-```
-
-This file proves that when the compensation starts at zero and the new addend
-is no larger in magnitude than the running sum, the step coincides with the
-error-free `fast2Sum` transform up to the sign convention on the compensation.
-
-That gives an exact conservation law:
-
-`s + x = s' - c'`
-
-This is the verified bridge from the EFT story to a practically meaningful
-compensated-summation kernel.
+Single-step and fold-level verification of Kahan compensated summation.
 -/
 
 namespace Flean
@@ -66,14 +46,6 @@ The empty list returns `(0,0)`. -/
 noncomputable def kahanSum (fmt : FloatFormat) : List ℝ → ℝ × ℝ
   | [] => (0, 0)
   | x :: xs => kahanFold fmt (x, 0) xs
-
-private theorem listForall_cons {α : Type} {p : α → Prop} {x : α} {xs : List α}
-    (h : List.Forall p (x :: xs)) : p x ∧ List.Forall p xs := by
-  cases xs with
-  | nil =>
-      simpa [List.Forall] using h
-  | cons y ys =>
-      simpa [List.Forall] using h
 
 /-- With zero initial compensation and the usual `fast2Sum` side condition,
 the Kahan step is exactly the `fast2Sum` head together with the negated
@@ -291,7 +263,7 @@ theorem kahanSum_exact {fmt : FloatFormat} (hβ : fmt.β = 2) {xs : List ℝ}
   | nil =>
       simp [kahanSum, kahanValue]
   | cons x xs =>
-      rcases hin with ⟨hx, hchain⟩
+      rcases hin with ⟨_, hchain⟩
       have hfold : kahanValue (kahanFold fmt (x, 0) xs) = kahanValue (x, 0) + xs.sum :=
         kahanFold_exact hβ hchain
       simpa [kahanSum, kahanValue] using hfold
@@ -304,7 +276,7 @@ theorem kahanSum_tight_bound {fmt : FloatFormat} (hβ : fmt.β = 2) {xs : List �
   | nil =>
       simp [kahanSum]
   | cons x xs =>
-      rcases hin with ⟨hx, hchain⟩
+      rcases hin with ⟨_, hchain⟩
       have hfold :
           |(kahanValue (x, 0) + xs.sum) - (kahanFold fmt (x, 0) xs).1|
             = |(kahanFold fmt (x, 0) xs).2| :=
@@ -330,174 +302,5 @@ theorem kahanSum_tight_bound_binary32 {xs : List ℝ}
     (hin : KahanInput binary32 xs) :
     |xs.sum - (kahanSum binary32 xs).1| = |(kahanSum binary32 xs).2| :=
   kahanSum_tight_bound (fmt := binary32) (by rfl) hin
-
-/-! ## Blockwise Kahan reduction -/
-
-/-- Summary value exported by one Kahan-reduced block. -/
-noncomputable def kahanBlockValue (fmt : FloatFormat) (xs : List ℝ) : ℝ :=
-  kahanValue (kahanSum fmt xs)
-
-/-- Kahan summation after first reducing each block to its compensated summary. -/
-noncomputable def chunkedKahanSum (fmt : FloatFormat) (xss : List (List ℝ)) : ℝ × ℝ :=
-  kahanSum fmt (xss.map (kahanBlockValue fmt))
-
-/-- Practical blockwise input contract:
-every block is individually valid for Kahan, and the list of block summaries is
-itself valid for the outer Kahan reduction. -/
-def ChunkedKahanInput (fmt : FloatFormat) (xss : List (List ℝ)) : Prop :=
-  List.Forall (KahanInput fmt) xss ∧ KahanInput fmt (xss.map (kahanBlockValue fmt))
-
-private theorem map_kahanBlockValue_sum_eq_sum_map_sum {fmt : FloatFormat} (hβ : fmt.β = 2)
-    {xss : List (List ℝ)} (hblocks : List.Forall (KahanInput fmt) xss) :
-    (xss.map (kahanBlockValue fmt)).sum = (xss.map List.sum).sum := by
-  induction xss with
-  | nil =>
-      simp
-  | cons xs xss ih =>
-      have hsplit := listForall_cons hblocks
-      rcases hsplit with ⟨hxs, htail⟩
-      have hhead : kahanBlockValue fmt xs = xs.sum := by
-        exact kahanSum_exact hβ hxs
-      simp [hhead, ih htail]
-
-/-- Exactness of two-level blockwise Kahan reduction. -/
-theorem chunkedKahanSum_exact {fmt : FloatFormat} (hβ : fmt.β = 2)
-    {xss : List (List ℝ)} (hin : ChunkedKahanInput fmt xss) :
-    kahanValue (chunkedKahanSum fmt xss) = (xss.map List.sum).sum := by
-  rcases hin with ⟨hblocks, hout⟩
-  have houter : kahanValue (chunkedKahanSum fmt xss) = (xss.map (kahanBlockValue fmt)).sum := by
-    exact kahanSum_exact hβ hout
-  rw [houter, map_kahanBlockValue_sum_eq_sum_map_sum hβ hblocks]
-
-/-- Tight forward error bound for blockwise Kahan reduction. -/
-theorem chunkedKahanSum_tight_bound {fmt : FloatFormat} (hβ : fmt.β = 2)
-    {xss : List (List ℝ)} (hin : ChunkedKahanInput fmt xss) :
-    |(xss.map List.sum).sum - (chunkedKahanSum fmt xss).1|
-      = |(chunkedKahanSum fmt xss).2| := by
-  rcases hin with ⟨hblocks, hout⟩
-  have houter :
-      |(xss.map (kahanBlockValue fmt)).sum - (chunkedKahanSum fmt xss).1|
-        = |(chunkedKahanSum fmt xss).2| := by
-    exact kahanSum_tight_bound hβ hout
-  rw [map_kahanBlockValue_sum_eq_sum_map_sum hβ hblocks] at houter
-  exact houter
-
-/-! ## Neumaier summation -/
-
-/-- Neumaier step implemented via the already-verified `adaptiveFast2Sum`.
-This removes Kahan's dominant-sum side condition by choosing the larger-magnitude
-operand locally. -/
-noncomputable def neumaierStep (fmt : FloatFormat) (s c x : ℝ) : ℝ × ℝ :=
-  let p := adaptiveFast2Sum fmt s x
-  (p.1, c - p.2)
-
-/-- Real value represented by a Neumaier state. -/
-def neumaierValue (sc : ℝ × ℝ) : ℝ :=
-  sc.1 - sc.2
-
-/-- Neumaier fold over a list of inputs. -/
-noncomputable def neumaierFold (fmt : FloatFormat) : ℝ × ℝ → List ℝ → ℝ × ℝ
-  | sc, [] => sc
-  | sc, x :: xs => neumaierFold fmt (neumaierStep fmt sc.1 sc.2 x) xs
-
-/-- User-facing Neumaier summation started from the first input and zero
-compensation. It only requires representable inputs. -/
-noncomputable def neumaierSum (fmt : FloatFormat) : List ℝ → ℝ × ℝ
-  | [] => (0, 0)
-  | x :: xs => neumaierFold fmt (x, 0) xs
-
-/-- Practical Neumaier input contract: every input term is representable. -/
-def NeumaierInput (fmt : FloatFormat) : List ℝ → Prop
-  | [] => True
-  | x :: xs => isRepresentable fmt x ∧ List.Forall (isRepresentable fmt) xs
-
-theorem neumaierStep_exact {fmt : FloatFormat} (hβ : fmt.β = 2)
-    {s c x : ℝ} (hs : isRepresentable fmt s) (hx : isRepresentable fmt x) :
-    neumaierValue (neumaierStep fmt s c x) = neumaierValue (s, c) + x := by
-  let p := adaptiveFast2Sum fmt s x
-  have hp : s + x = p.1 + p.2 := by
-    dsimp [p]
-    simpa using adaptiveFast2Sum_exact hβ hs hx
-  dsimp [neumaierStep, neumaierValue, p]
-  linarith
-
-theorem neumaierStep_head_repr {fmt : FloatFormat} {s c x : ℝ}
-    (_hs : isRepresentable fmt s) (_hx : isRepresentable fmt x) :
-    isRepresentable fmt (neumaierStep fmt s c x).1 := by
-  unfold neumaierStep
-  simpa using adaptiveFast2Sum_fst_repr fmt s x
-
-theorem neumaierFold_exact {fmt : FloatFormat} (hβ : fmt.β = 2)
-    {sc : ℝ × ℝ} {xs : List ℝ}
-    (hs : isRepresentable fmt sc.1) (hxs : List.Forall (isRepresentable fmt) xs) :
-    neumaierValue (neumaierFold fmt sc xs) = neumaierValue sc + xs.sum := by
-  induction xs generalizing sc with
-  | nil =>
-      simp [neumaierFold, neumaierValue]
-  | cons x xs ih =>
-      have hsplit := listForall_cons hxs
-      rcases hsplit with ⟨hx, htail⟩
-      have hstep : neumaierValue (neumaierStep fmt sc.1 sc.2 x) = neumaierValue sc + x := by
-        exact neumaierStep_exact hβ hs hx
-      have hrepr : isRepresentable fmt (neumaierStep fmt sc.1 sc.2 x).1 := by
-        exact neumaierStep_head_repr hs hx
-      have htail_exact :
-          neumaierValue (neumaierFold fmt (neumaierStep fmt sc.1 sc.2 x) xs) =
-            neumaierValue (neumaierStep fmt sc.1 sc.2 x) + xs.sum := by
-        exact ih hrepr htail
-      calc
-        neumaierValue (neumaierFold fmt sc (x :: xs))
-            = neumaierValue (neumaierFold fmt (neumaierStep fmt sc.1 sc.2 x) xs) := by
-                simp [neumaierFold]
-        _ = neumaierValue (neumaierStep fmt sc.1 sc.2 x) + xs.sum := htail_exact
-        _ = (neumaierValue sc + x) + xs.sum := by rw [hstep]
-        _ = neumaierValue sc + (x :: xs).sum := by
-              simp
-              ring
-
-theorem neumaierSum_exact {fmt : FloatFormat} (hβ : fmt.β = 2) {xs : List ℝ}
-    (hin : NeumaierInput fmt xs) :
-    neumaierValue (neumaierSum fmt xs) = xs.sum := by
-  cases xs with
-  | nil =>
-      simp [neumaierSum, neumaierValue]
-  | cons x xs =>
-      rcases hin with ⟨hx, hxs⟩
-      have hfold : neumaierValue (neumaierFold fmt (x, 0) xs) = neumaierValue (x, 0) + xs.sum :=
-        neumaierFold_exact hβ hx hxs
-      simpa [neumaierSum, neumaierValue] using hfold
-
-theorem neumaierSum_tight_bound {fmt : FloatFormat} (hβ : fmt.β = 2) {xs : List ℝ}
-    (hin : NeumaierInput fmt xs) :
-    |xs.sum - (neumaierSum fmt xs).1| = |(neumaierSum fmt xs).2| := by
-  have hexact := neumaierSum_exact hβ hin
-  cases hsum : neumaierSum fmt xs with
-  | mk s c =>
-      dsimp [neumaierValue] at hexact
-      rw [hsum] at hexact
-      have hdiff : xs.sum - s = -c := by
-        linarith
-      have habs : |xs.sum - s| = |(-c)| := congrArg abs hdiff
-      simpa [hsum, abs_neg] using habs
-
-theorem neumaierSum_exact_binary64 {xs : List ℝ}
-    (hin : NeumaierInput binary64 xs) :
-    neumaierValue (neumaierSum binary64 xs) = xs.sum :=
-  neumaierSum_exact (fmt := binary64) (by rfl) hin
-
-theorem neumaierSum_exact_binary32 {xs : List ℝ}
-    (hin : NeumaierInput binary32 xs) :
-    neumaierValue (neumaierSum binary32 xs) = xs.sum :=
-  neumaierSum_exact (fmt := binary32) (by rfl) hin
-
-theorem neumaierSum_tight_bound_binary64 {xs : List ℝ}
-    (hin : NeumaierInput binary64 xs) :
-    |xs.sum - (neumaierSum binary64 xs).1| = |(neumaierSum binary64 xs).2| :=
-  neumaierSum_tight_bound (fmt := binary64) (by rfl) hin
-
-theorem neumaierSum_tight_bound_binary32 {xs : List ℝ}
-    (hin : NeumaierInput binary32 xs) :
-    |xs.sum - (neumaierSum binary32 xs).1| = |(neumaierSum binary32 xs).2| :=
-  neumaierSum_tight_bound (fmt := binary32) (by rfl) hin
 
 end Flean

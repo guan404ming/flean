@@ -1,7 +1,6 @@
-import Flean.Core.GenericFormat
+import Flean.Core.Representable
 import Flean.Core.DirectedRound
-import Flean.Core.NearestEven
-import Flean.Core.RoundRound
+import Flean.Core.NearestRound
 import Flean.Core.DoubleRound
 import Flean.Core.DoubleRoundNNE
 

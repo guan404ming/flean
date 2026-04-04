@@ -1,7 +1,8 @@
-import Flean.Apps.ExpansionSum
+import Flean.Apps.Common.List
+import Flean.Apps.EFT.ExpansionSum
 
 /-!
-# Flean.Apps.AdaptiveExpansionSum
+# Flean.Apps.EFT.AdaptiveExpansionSum
 
 Adaptive expansion distillation for arbitrary radix-2 inputs.
 
@@ -41,14 +42,6 @@ noncomputable def adaptiveDistillList (fmt : FloatFormat) : List ℝ → ℝ × 
 def AdaptiveExpansionInput (fmt : FloatFormat) : List ℝ → Prop
   | [] => True
   | x :: xs => isRepresentable fmt x ∧ List.Forall (isRepresentable fmt) xs
-
-private theorem listForall_cons {α : Type} {p : α → Prop} {x : α} {xs : List α}
-    (h : List.Forall p (x :: xs)) : p x ∧ List.Forall p xs := by
-  cases xs with
-  | nil =>
-      simpa [List.Forall] using h
-  | cons y ys =>
-      simpa [List.Forall] using h
 
 theorem adaptiveFast2Sum_fst_repr (fmt : FloatFormat) (a b : ℝ) :
     isRepresentable fmt (adaptiveFast2Sum fmt a b).1 := by

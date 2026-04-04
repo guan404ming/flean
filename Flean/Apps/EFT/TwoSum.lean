@@ -1,9 +1,10 @@
-import Flean.Core.NearestEven
+import Flean.Core.NearestRound
 import Flean.Core.DoubleRoundNNE
 import Flean.Core.ULP
+import Flean.Core.Sterbenz
 
 /-!
-# Flean.Apps.TwoSum
+# Flean.Apps.EFT.TwoSum
 
 Formal verification of the Fast2Sum (Dekker) algorithm for error-free
 transformations in IEEE 754 binary floating-point arithmetic.
@@ -21,15 +22,6 @@ transformations in IEEE 754 binary floating-point arithmetic.
 namespace Flean
 
 /-! ## Helper lemmas -/
-
-theorem sterbenz_roundNNE (fmt : FloatFormat) {x y : ℝ}
-    (hx : isRepresentable fmt x) (hy : isRepresentable fmt y)
-    (hx0 : 0 ≤ x) (hy0 : 0 ≤ y)
-    (hxy : y ≤ 2 * x) (hyx : x ≤ 2 * y) :
-    roundNNE fmt (x - y) = x - y := by
-  apply roundNNE_repr_fixed
-  rw [← sterbenz fmt hx hy hx0 hy0 hxy hyx]
-  exact roundTZ_isRepresentable fmt _
 
 theorem sterbenz_repr (fmt : FloatFormat) {x y : ℝ}
     (hx : isRepresentable fmt x) (hy : isRepresentable fmt y)
@@ -236,32 +228,12 @@ theorem fast2Sum_err_repr {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
   -- Get representations
   obtain ⟨mb, eb, hval_b, hmb, heb⟩ := hb
   obtain ⟨msa, esa, hval_sa, hmsa, hesa⟩ := hsa_repr
-  -- At exponent e = min(eb, esa): both b and (s-a) are integer multiples of β^e
   have hβ_pos : (0 : ℝ) < (fmt.β : ℝ) := by rw [hβ]; norm_num
   have hβ_ne : (fmt.β : ℝ) ≠ 0 := ne_of_gt hβ_pos
-  -- Express b - (s-a) at exponent min(eb, esa)
-  -- The significand is bounded by |err|/β^e ≤ |b|/β^e ≤ |mb| * β^(eb-e)
-  -- When e = eb: significand ≤ |mb| < β^p. Done.
-  -- When e = esa < eb: significand could be larger. But since |err| ≤ |b| < β^(eb+p):
-  -- significand = |err|/β^esa < β^(eb+p)/β^esa = β^(eb-esa+p). Could be > β^p.
-  -- Need a tighter bound or a different exponent.
-  -- Key insight: |err| ≤ |b|. And b is representable with |mb| < β^p at exponent eb.
-  -- The error is ALSO representable at exponent eb (since it divides evenly):
-  -- err = b - (s-a). Both b and s-a are multiples of β^min(eb,esa) = β^(min eb esa).
-  -- At exponent eb: err/β^eb = mb - (s-a)/β^eb.
-  -- (s-a)/β^eb = msa * β^(esa-eb). Integer iff esa ≥ eb.
-  -- When esa ≥ eb: err/β^eb = mb - msa * β^(esa-eb), integer.
-  --   |err/β^eb| ≤ |mb| < β^p (since |err| ≤ |b| = |mb|*β^eb). ✓
-  -- When esa < eb: (s-a)/β^eb not integer. Use exponent esa instead.
-  --   err/β^esa = mb * β^(eb-esa) - msa, integer.
-  --   |err/β^esa| ≤ |err|/β^esa ≤ |b|/β^esa = |mb| * β^(eb-esa).
-  --   Could be ≥ β^p. Need the β=2 gap argument (same as subnormal case).
-  -- For simplicity, handle the common case esa ≥ eb, sorry the other.
   by_cases hesa_ge : eb ≤ esa
   · -- Common case: exponent of (s-a) ≥ exponent of b
     -- err at exponent eb has integer significand bounded by |mb|
     set d := mb - msa * (fmt.β : ℤ) ^ (esa - eb).toNat
-    -- Use repr_diff_at_lower_exp or direct algebra
     have hval_sa' : s - a = (msa : ℝ) * (fmt.β : ℝ) ^ esa := hval_sa
     have hnn : (0 : ℤ) ≤ esa - eb := by omega
     have hval_err : b - (s - a) = (d : ℝ) * (fmt.β : ℝ) ^ eb := by
@@ -304,7 +276,6 @@ theorem fast2Sum_err_repr {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
     have he0_ea : e0 ≤ ea := min_le_left ea eb
     have he0_eb : e0 ≤ eb := min_le_right ea eb
     have he0_emin : fmt.emin ≤ e0 := le_min hea_ge heb
-    -- cexp(a+b)
     set ec := cexp fmt (a + b) with hec_def
     -- Show a+b is a multiple of bpow(e0)
     have hab_mul : ∃ (k : ℤ), a + b = (k : ℝ) * (fmt.β : ℝ) ^ e0 := by
@@ -360,11 +331,6 @@ theorem fast2Sum_err_repr {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
                     < (fmt.β : ℝ) ^ fmt.prec * (fmt.β : ℝ) ^ ea :=
                     mul_lt_mul_of_pos_right (by exact_mod_cast hma_bd) (zpow_pos hβ_pos ea)
                   _ = _ := by rw [← zpow_natCast, ← zpow_add₀ hβ_ne]; congr 1; ring
-              -- |a+b| < 2 * β^(ea+p) = β^(ea+p+1) for β=2
-              -- cexp(a+b) ≤ ea + 1
-              -- Direct: |a+b| ≤ 2|a| < 2β^(ea+p). For β=2: 2β^(ea+p) = β^(ea+p+1).
-              -- cexp(x) ≤ floor(log_β|x|) - p + 1 and |a+b| < β^(ea+p+1)
-              -- so floor(...) ≤ ea+p, hence cexp ≤ ea+1.
               show cexp fmt (a + b) ≤ ea + 1
               unfold cexp
               split
@@ -441,23 +407,13 @@ theorem fast2Sum_err_repr {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
         -- So roundNNE is exact.
         change roundNNE fmt (a + b) = a + b
         apply roundNNE_repr_fixed
-        -- a + b is representable: at exponent ec, its scaled mantissa is an integer < β^p
-        -- Actually easier: show a+b is representable at exponent e0.
         obtain ⟨k, hk⟩ := hab_mul
-        -- |k| < β^p follows from scaled_abs_lt applied at a+b
-        -- a+b = k * β^e0 and we need |k| < β^p
-        -- |a+b| / β^e0 = |k|. And |a+b| / β^cexp(a+b) < β^p (from scaled_abs_lt).
-        -- |k| = |a+b| / β^e0 = (|a+b| / β^ec) * β^(ec - e0).
-        -- Since ec < e0: β^(ec-e0) < 1 (for β=2, ec-e0 ≤ -1).
-        -- |k| < β^p * β^(ec-e0) < β^p.
         have hk_bd : |k| < (fmt.β : ℤ) ^ fmt.prec := by
           have hsc := scaled_abs_lt fmt (a + b)
-          -- |a+b / bpow(ec)| < β^p
           -- Save cexp value before rewriting a+b
           have hec_ab : cexp fmt (a + b) = ec := hec_def.symm
           rw [hec_ab] at hsc; simp only [bpow] at hsc
           rw [hk] at hsc
-          -- hsc : |↑k * ↑fmt.β ^ e0 / ↑fmt.β ^ ec| < ↑fmt.β ^ fmt.prec
           have hpow_e0 := zpow_pos hβ_pos e0
           have hpow_ec := zpow_pos hβ_pos ec
           rw [abs_div, abs_mul, abs_of_pos hpow_e0, abs_of_pos hpow_ec] at hsc

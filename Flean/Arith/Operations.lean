@@ -1,5 +1,4 @@
 import Flean.Binary.Defs
-import Flean.Binary.Special
 import Flean.Core.Rounding
 import Flean.Core.RoundProps
 import Flean.Arith.Exceptions

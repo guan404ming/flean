@@ -1,6 +1,5 @@
 import Flean.Arith.Operations
 import Flean.Binary.Defs
-import Flean.Binary.Special
 
 /-!
 # Flean.Arith.FMA

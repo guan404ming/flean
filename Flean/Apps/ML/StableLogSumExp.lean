@@ -1,8 +1,8 @@
 import Mathlib.Data.List.MinMax
-import Flean.Apps.KahanSum
+import Flean.Apps.Compensated.ChunkedKahan
 
 /-!
-# Flean.Apps.StableLogSumExp
+# Flean.Apps.ML.StableLogSumExp
 
 Stable `log-sum-exp` skeleton built on verified chunked reduction.
 

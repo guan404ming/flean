@@ -1,4 +1,4 @@
-import Flean.Core.NearestAway
+import Flean.Core.NearestRound
 
 /-!
 # Flean.Core.RelativeError

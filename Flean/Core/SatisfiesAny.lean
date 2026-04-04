@@ -1,4 +1,4 @@
-import Flean.Core.GenericFormat
+import Flean.Core.Representable
 import Flean.Core.DoubleRound
 
 /-!

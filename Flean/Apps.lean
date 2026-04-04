@@ -1,0 +1,8 @@
+import Flean.Apps.EFT.TwoSum
+import Flean.Apps.EFT.ExpansionSum
+import Flean.Apps.EFT.AdaptiveExpansionSum
+import Flean.Apps.Compensated.Kahan
+import Flean.Apps.Compensated.ChunkedKahan
+import Flean.Apps.Compensated.Neumaier
+import Flean.Apps.ML.DotProd
+import Flean.Apps.ML.StableLogSumExp

@@ -1,5 +1,5 @@
 import Flean.Binary.Properties
-import Flean.Core.NearestAway
+import Flean.Core.NearestRound
 
 /-!
 # Flean.Bridge

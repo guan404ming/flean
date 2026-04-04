@@ -14,20 +14,19 @@ IEEE 754 arithmetic correctness: specification-level and bit-level.
 
 Following Flocq's approach, we separate two concerns:
 
-1. **Specification-level correctness** (this file, fully proved):
+1. **Specification-level correctness**:
    Each operation is `round(exact_result)`. This is trivially correct
    by construction and gives us error bounds, monotonicity, etc. for free.
 
-2. **Bit-level equivalence** (stated, not yet proved):
+2. **Bit-level equivalence**:
    The `FloatBits` implementations (`mul`, `add`, etc.) compute the same
    result as the spec-level operations. This requires verifying `roundAndPack`.
 
-All theorems in Section 1 are sorry-free.
 -/
 
 namespace Flean
 
-/-! ## Section 1: Specification-level operations (sorry-free)
+/-! ## Section 1: Specification-level operations
 
 These define the IEEE 754 semantics as `round(exact_result)` on ℝ.
 Correctness is immediate. Error bounds follow from rounding properties. -/

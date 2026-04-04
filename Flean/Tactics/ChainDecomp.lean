@@ -1,4 +1,4 @@
-import Flean.Core.ChainError
+import Flean.Core.CastChain
 import Lean
 
 /-!

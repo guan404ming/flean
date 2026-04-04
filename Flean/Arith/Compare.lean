@@ -1,5 +1,4 @@
 import Flean.Binary.Defs
-import Flean.Binary.Special
 
 /-!
 # Flean.Arith.Compare

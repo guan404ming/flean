@@ -1,4 +1,3 @@
-import Flean.Core.ChainError
 import Flean.Core.RelativeError
 import Flean.Core.CastChain
 import Flean.Tactics.MixedPrecision
@@ -6,7 +5,7 @@ import Flean.Tactics.ChainDecomp
 import Flean.Tactics.NumericBounds
 
 /-!
-# Flean.Apps.DotProd
+# Flean.Apps.ML.DotProd
 
 Mixed-precision dot product error analysis.
 

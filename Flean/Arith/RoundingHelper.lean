@@ -1,6 +1,5 @@
 import Flean.Core.Rounding
 import Flean.Binary.Defs
-import Flean.Binary.Special
 import Flean.Arith.Exceptions
 
 /-!
