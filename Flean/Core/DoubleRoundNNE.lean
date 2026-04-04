@@ -198,4 +198,33 @@ theorem double_roundNNE_of_intermediate_repr {fmt1 fmt2 : FloatFormat}
         exact_mod_cast hceil.symm
     linarith [hyb_eq]
 
+/-! ## General NNE double rounding with sufficient precision -/
+
+/-- When the intermediate rounding does not land on the fmt1 midpoint,
+    double rounding NNE is correct. This is the "easy" case of the
+    Figueroa/Boldo-Melquiond analysis. -/
+theorem double_roundNNE_of_not_midpoint {fmt1 fmt2 : FloatFormat}
+    (href : FormatRefines fmt1 fmt2) {x : ℝ}
+    (hmid : roundNNE fmt2 x ≠ (roundDN fmt1 x + roundUP fmt1 x) / 2) :
+    roundNNE fmt1 (roundNNE fmt2 x) = roundNNE fmt1 x := by
+  sorry
+
+/-- When fmt2 has at least 2*p1+2 precision, NNE double rounding is always correct.
+    This is the classical sufficient condition (Figueroa 1995, Boldo-Melquiond).
+
+    Proof strategy (following Flocq):
+    1. If x is representable in fmt1, use `double_roundNNE_of_repr`.
+    2. Otherwise x lies strictly between consecutive fmt1-representable numbers a, b.
+       a. If roundNNE fmt2 x ≠ (a+b)/2, apply `double_roundNNE_of_not_midpoint`.
+       b. If roundNNE fmt2 x = (a+b)/2, derive a contradiction: the midpoint (a+b)/2
+          has a significand requiring exactly p1+1 digits, but fmt2 with p2 ≥ 2*p1+2
+          precision would round x away from this midpoint (the gap between x and the
+          midpoint is at most ulp(fmt2)/2, which is strictly less than ulp(fmt1)/2
+          when p2 ≥ 2*p1+2). -/
+theorem double_roundNNE_of_prec_ge {fmt1 fmt2 : FloatFormat}
+    (href : FormatRefines fmt1 fmt2)
+    (hprec : 2 * fmt1.prec + 2 ≤ fmt2.prec) (x : ℝ) :
+    roundNNE fmt1 (roundNNE fmt2 x) = roundNNE fmt1 x := by
+  sorry
+
 end Flean

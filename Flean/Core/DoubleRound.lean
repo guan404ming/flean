@@ -43,35 +43,101 @@ theorem isRepresentable_of_refines {fmt1 fmt2 : FloatFormat} (href : FormatRefin
           rw [← href.radix_eq]
           exact_mod_cast Nat.pow_le_pow_right (by have := fmt1.hβ; omega) href.prec_le
 
-/-! ## Double rounding for directed modes -/
+/-! ## Generic double rounding for directed modes -/
+
+/-- A ZrndFn is "directed downward" if zrnd y ≤ y for all y (like floor). -/
+def ZrndFn.isDirectedDN (zr : ZrndFn) : Prop :=
+  ∀ y : ℝ, (zr.zrnd y : ℝ) ≤ y
+
+/-- A ZrndFn is "directed upward" if y ≤ zrnd y for all y (like ceil). -/
+def ZrndFn.isDirectedUP (zr : ZrndFn) : Prop :=
+  ∀ y : ℝ, y ≤ (zr.zrnd y : ℝ)
+
+/-- Double rounding for directed-downward modes. -/
+theorem double_roundGeneric_of_directedDN (zr : ZrndFn) {fmt1 fmt2 : FloatFormat}
+    (href : FormatRefines fmt1 fmt2)
+    (hdir : zr.isDirectedDN)
+    (hmon : Monotone (roundGeneric zr fmt1))
+    (x : ℝ) :
+    roundGeneric zr fmt1 (roundGeneric zr fmt2 x) = roundGeneric zr fmt1 x := by
+  set y := roundGeneric zr fmt2 x
+  have hy_le : y ≤ x := by
+    show roundGeneric zr fmt2 x ≤ x
+    show (zr.zrnd (x / bpow fmt2 (cexp fmt2 x)) : ℝ) * bpow fmt2 (cexp fmt2 x) ≤ x
+    calc (zr.zrnd (x / bpow fmt2 (cexp fmt2 x)) : ℝ) * bpow fmt2 (cexp fmt2 x)
+        ≤ (x / bpow fmt2 (cexp fmt2 x)) * bpow fmt2 (cexp fmt2 x) :=
+          mul_le_mul_of_nonneg_right (hdir _) (bpow_pos fmt2 _).le
+      _ = x := div_mul_cancel₀ x (bpow_ne_zero fmt2 _)
+  have h1 : roundGeneric zr fmt1 y ≤ roundGeneric zr fmt1 x := hmon hy_le
+  have h_r1_repr2 : isRepresentable fmt2 (roundGeneric zr fmt1 x) :=
+    isRepresentable_of_refines href (roundGeneric_isRepresentable zr fmt1 x)
+  have h_fixed : roundGeneric zr fmt2 (roundGeneric zr fmt1 x) = roundGeneric zr fmt1 x :=
+    roundGeneric_repr_fixed zr fmt2 h_r1_repr2
+  have h_r1_le : roundGeneric zr fmt1 x ≤ x := by
+    show (zr.zrnd (x / bpow fmt1 (cexp fmt1 x)) : ℝ) * bpow fmt1 (cexp fmt1 x) ≤ x
+    calc (zr.zrnd (x / bpow fmt1 (cexp fmt1 x)) : ℝ) * bpow fmt1 (cexp fmt1 x)
+        ≤ (x / bpow fmt1 (cexp fmt1 x)) * bpow fmt1 (cexp fmt1 x) :=
+          mul_le_mul_of_nonneg_right (hdir _) (bpow_pos fmt1 _).le
+      _ = x := div_mul_cancel₀ x (bpow_ne_zero fmt1 _)
+  have h2 : roundGeneric zr fmt1 x ≤ y :=
+    h_fixed ▸ roundGeneric_monotone zr fmt2 h_r1_le
+  have h3 : roundGeneric zr fmt1 x ≤ roundGeneric zr fmt1 y :=
+    (roundGeneric_repr_fixed zr fmt1 (roundGeneric_isRepresentable zr fmt1 x)) ▸ hmon h2
+  exact le_antisymm h1 h3
+
+/-- Double rounding for directed-upward modes. -/
+theorem double_roundGeneric_of_directedUP (zr : ZrndFn) {fmt1 fmt2 : FloatFormat}
+    (href : FormatRefines fmt1 fmt2)
+    (hdir : zr.isDirectedUP)
+    (hmon : Monotone (roundGeneric zr fmt1))
+    (x : ℝ) :
+    roundGeneric zr fmt1 (roundGeneric zr fmt2 x) = roundGeneric zr fmt1 x := by
+  set y := roundGeneric zr fmt2 x
+  have hy_ge : x ≤ y := by
+    show x ≤ roundGeneric zr fmt2 x
+    show x ≤ (zr.zrnd (x / bpow fmt2 (cexp fmt2 x)) : ℝ) * bpow fmt2 (cexp fmt2 x)
+    calc x = (x / bpow fmt2 (cexp fmt2 x)) * bpow fmt2 (cexp fmt2 x) :=
+          (div_mul_cancel₀ x (bpow_ne_zero fmt2 _)).symm
+      _ ≤ (zr.zrnd (x / bpow fmt2 (cexp fmt2 x)) : ℝ) * bpow fmt2 (cexp fmt2 x) :=
+          mul_le_mul_of_nonneg_right (hdir _) (bpow_pos fmt2 _).le
+  have h1 : roundGeneric zr fmt1 x ≤ roundGeneric zr fmt1 y := hmon hy_ge
+  have h_r1_repr2 : isRepresentable fmt2 (roundGeneric zr fmt1 x) :=
+    isRepresentable_of_refines href (roundGeneric_isRepresentable zr fmt1 x)
+  have h_fixed : roundGeneric zr fmt2 (roundGeneric zr fmt1 x) = roundGeneric zr fmt1 x :=
+    roundGeneric_repr_fixed zr fmt2 h_r1_repr2
+  have h_r1_ge : x ≤ roundGeneric zr fmt1 x := by
+    show x ≤ (zr.zrnd (x / bpow fmt1 (cexp fmt1 x)) : ℝ) * bpow fmt1 (cexp fmt1 x)
+    calc x = (x / bpow fmt1 (cexp fmt1 x)) * bpow fmt1 (cexp fmt1 x) :=
+          (div_mul_cancel₀ x (bpow_ne_zero fmt1 _)).symm
+      _ ≤ (zr.zrnd (x / bpow fmt1 (cexp fmt1 x)) : ℝ) * bpow fmt1 (cexp fmt1 x) :=
+          mul_le_mul_of_nonneg_right (hdir _) (bpow_pos fmt1 _).le
+  have h2 : y ≤ roundGeneric zr fmt1 x :=
+    h_fixed ▸ roundGeneric_monotone zr fmt2 h_r1_ge
+  have h3 : roundGeneric zr fmt1 y ≤ roundGeneric zr fmt1 x :=
+    (roundGeneric_repr_fixed zr fmt1 (roundGeneric_isRepresentable zr fmt1 x)) ▸ hmon h2
+  exact le_antisymm h3 h1
+
+/-! ## Double rounding for concrete directed modes -/
+
+private theorem zrndDN_isDirectedDN : zrndDN.isDirectedDN :=
+  fun y => by exact_mod_cast Int.floor_le y
+
+private theorem zrndUP_isDirectedUP : zrndUP.isDirectedUP :=
+  fun y => by exact_mod_cast Int.le_ceil y
 
 /-- Double rounding for roundDN. -/
 theorem double_roundDN {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2) (x : ℝ) :
     roundDN fmt1 (roundDN fmt2 x) = roundDN fmt1 x := by
-  have h_fixed : roundDN fmt2 (roundDN fmt1 x) = roundDN fmt1 x :=
-    roundDN_repr_fixed fmt2 (isRepresentable_of_refines href (roundDN_isRepresentable fmt1 x))
-  have h_le : roundDN fmt1 x ≤ roundDN fmt2 x :=
-    h_fixed ▸ roundDN_monotone fmt2 (roundDN_le fmt1 x)
-  have h1 : roundDN fmt1 (roundDN fmt2 x) ≤ roundDN fmt1 x :=
-    roundDN_monotone fmt1 (roundDN_le fmt2 x)
-  have h2 : roundDN fmt1 x ≤ roundDN fmt1 (roundDN fmt2 x) := by
-    calc roundDN fmt1 x
-        = roundDN fmt1 (roundDN fmt1 x) := (roundDN_idempotent fmt1 x).symm
-      _ ≤ roundDN fmt1 (roundDN fmt2 x) := roundDN_monotone fmt1 h_le
-  linarith
+  have := double_roundGeneric_of_directedDN zrndDN href zrndDN_isDirectedDN
+    (roundGeneric_monotone zrndDN fmt1) x
+  simp only [← roundDN_eq_generic] at this; exact this
 
 /-- Double rounding for roundUP. -/
 theorem double_roundUP {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2) (x : ℝ) :
     roundUP fmt1 (roundUP fmt2 x) = roundUP fmt1 x := by
-  have h_fixed : roundUP fmt2 (roundUP fmt1 x) = roundUP fmt1 x :=
-    roundUP_repr_fixed fmt2 (isRepresentable_of_refines href (roundUP_isRepresentable fmt1 x))
-  have h_le : roundUP fmt2 x ≤ roundUP fmt1 x :=
-    le_of_le_of_eq (roundUP_monotone fmt2 (roundUP_ge fmt1 x)) h_fixed
-  have h1 : roundUP fmt1 (roundUP fmt2 x) ≤ roundUP fmt1 x := by
-    calc roundUP fmt1 (roundUP fmt2 x)
-        ≤ roundUP fmt1 (roundUP fmt1 x) := roundUP_monotone fmt1 h_le
-      _ = roundUP fmt1 x := roundUP_idempotent fmt1 x
-  linarith [roundUP_monotone fmt1 (roundUP_ge fmt2 x)]
+  have := double_roundGeneric_of_directedUP zrndUP href zrndUP_isDirectedUP
+    (roundGeneric_monotone zrndUP fmt1) x
+  simp only [← roundUP_eq_generic] at this; exact this
 
 /-- Double rounding for roundTZ. -/
 theorem double_roundTZ {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2) (x : ℝ) :

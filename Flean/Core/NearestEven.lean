@@ -105,16 +105,7 @@ theorem roundNNE_neg (fmt : FloatFormat) (x : ℝ) : roundNNE fmt (-x) = -roundN
 
 theorem roundNNE_sub_abs_le (fmt : FloatFormat) (x : ℝ) :
     |x - roundNNE fmt x| ≤ bpow fmt (cexp fmt x) / 2 := by
-  unfold roundNNE; dsimp only; set e := cexp fmt x
-  have hb := bpow_pos fmt e
-  have hsub := roundNearestEven_sub_abs (x / bpow fmt e)
-  have key : |x - (roundNearestEven (x / bpow fmt e) : ℝ) * bpow fmt e|
-      = |x / bpow fmt e - (roundNearestEven (x / bpow fmt e) : ℝ)| * bpow fmt e := by
-    rw [show |x / bpow fmt e - ↑(roundNearestEven (x / bpow fmt e))| * bpow fmt e
-        = |(x / bpow fmt e - ↑(roundNearestEven (x / bpow fmt e))) * bpow fmt e| from by
-      rw [abs_mul, abs_of_pos hb]]
-    congr 1; rw [sub_mul, div_mul_cancel₀ _ (bpow_ne_zero fmt e)]
-  linarith [mul_le_mul_of_nonneg_right hsub hb.le]
+  have := roundGenericNearest_sub_abs_le zrndNNE fmt x; rwa [abs_sub_comm]
 
 theorem roundNNE_error_rel (fmt : FloatFormat) {x : ℝ}
     (hx : (fmt.β : ℝ) ^ (fmt.emin + (fmt.prec : ℤ) - 1) ≤ |x|) :

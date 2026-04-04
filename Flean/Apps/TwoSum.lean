@@ -291,14 +291,192 @@ theorem fast2Sum_err_repr {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
           _ < _ := h4
       exact this
     exact ⟨d, eb, hval_err, hd_bound, heb⟩
-  · -- Case esa < eb: the rounding error (a+b)-s is representable at exponent
-    -- min(ea,eb) using the binary gap structure. The significand of a+b at
-    -- min(ea,eb) has a gap of zeros between b's bits and a's bits, ensuring
-    -- the rounded remainder stays within p digits.
-    -- Full proof requires detailed binary representation analysis
-    -- (Boldo & Melquiond, Computer Arithmetic and Formal Proofs, §6.3).
+  · -- Case esa < eb: express error at min(ea, eb) using a, b, s representations.
+    -- Use ulp bound when ea ≤ eb, |err| ≤ |b| bound when eb ≤ ea.
     push Not at hesa_ge
-    sorry
+    -- Get representation of a
+    obtain ⟨ma, ea, hval_a, hma_bd, hea_ge⟩ := ha
+    -- Get representation of s
+    have hs_repr := roundNNE_isRepresentable fmt (a + b)
+    obtain ⟨ms, es, hval_s, hms_bd, hes_ge⟩ := hs_repr
+    -- e0 = min ea eb
+    set e0 := min ea eb with he0_def
+    have he0_ea : e0 ≤ ea := min_le_left ea eb
+    have he0_eb : e0 ≤ eb := min_le_right ea eb
+    have he0_emin : fmt.emin ≤ e0 := le_min hea_ge heb
+    -- cexp(a+b)
+    set ec := cexp fmt (a + b) with hec_def
+    -- Show a+b is a multiple of bpow(e0)
+    have hab_mul : ∃ (k : ℤ), a + b = (k : ℝ) * (fmt.β : ℝ) ^ e0 := by
+      refine ⟨ma * (fmt.β : ℤ) ^ (ea - e0).toNat + mb * (fmt.β : ℤ) ^ (eb - e0).toNat, ?_⟩
+      rw [hval_a, hval_b]; push_cast; rw [add_mul]
+      congr 1 <;> rw [mul_assoc, ← zpow_natCast, ← zpow_add₀ hβ_ne]
+      · rw [Int.toNat_of_nonneg (show (0 : ℤ) ≤ ea - e0 from Int.sub_nonneg.mpr he0_ea),
+            show ea - e0 + e0 = ea from Int.sub_add_cancel ea e0]
+      · rw [Int.toNat_of_nonneg (show (0 : ℤ) ≤ eb - e0 from Int.sub_nonneg.mpr he0_eb),
+            show eb - e0 + e0 = eb from Int.sub_add_cancel eb e0]
+    -- Handle two cases: ec ≥ e0 (main) vs ec < e0 (err = 0)
+    by_cases hec_ge : e0 ≤ ec
+    · -- Main case: s is a multiple of bpow(e0), so err is too.
+      -- s is an integer multiple of bpow(ec), and ec ≥ e0, so s is a multiple of bpow(e0)
+      have hs_mul : ∃ (k : ℤ), s = (k : ℝ) * (fmt.β : ℝ) ^ e0 := by
+        -- s = roundNearestEven((a+b)/bpow(ec)) * bpow(ec) = n * bpow(ec)
+        -- Since ec ≥ e0: s = n * β^(ec-e0) * bpow(e0)
+        set n := roundNearestEven ((a + b) / bpow fmt ec)
+        have hs_eq : s = (n : ℝ) * bpow fmt ec := by
+          show roundNNE fmt (a + b) = _; unfold roundNNE; rfl
+        refine ⟨n * (fmt.β : ℤ) ^ (ec - e0).toNat, ?_⟩
+        rw [hs_eq]; unfold bpow; push_cast
+        rw [mul_assoc, ← zpow_natCast, ← zpow_add₀ hβ_ne,
+          Int.toNat_of_nonneg (show (0 : ℤ) ≤ ec - e0 from Int.sub_nonneg.mpr hec_ge),
+          show ec - e0 + e0 = ec from Int.sub_add_cancel ec e0]
+      -- err = j * bpow(e0)
+      obtain ⟨ka, hka⟩ := hab_mul
+      obtain ⟨ks, hks⟩ := hs_mul
+      set j := ka - ks with hj_def
+      have hval_err : b - (s - a) = (j : ℝ) * (fmt.β : ℝ) ^ e0 := by
+        rw [herr_eq, hka, hks]; simp only [hj_def]; push_cast; ring
+      -- Bound |j| < β^p by case split on ea vs eb
+      have hj_bound : |j| < (fmt.β : ℤ) ^ fmt.prec := by
+        have hbp_e0 := zpow_pos hβ_pos e0
+        by_cases hea_le_eb : ea ≤ eb
+        · -- ea ≤ eb, so e0 = ea. Use ulp bound: |err| ≤ bpow(ec)/2.
+          have he0_eq : e0 = ea := by rw [he0_def]; exact min_eq_left hea_le_eb
+          -- |err| ≤ bpow(ec)/2
+          have hulp := roundNNE_sub_abs_le fmt (a + b)
+          rw [show a + b - roundNNE fmt (a + b) = b - (s - a) from by ring] at hulp
+          rw [hval_err, abs_mul, abs_of_pos hbp_e0] at hulp
+          -- cexp(a+b) ≤ ea + 1
+          have hec_le : ec ≤ ea + 1 := by
+            by_cases hab_zero : a + b = 0
+            · show cexp fmt (a + b) ≤ ea + 1; rw [hab_zero, cexp_zero]; omega
+            · have hab_le : |a + b| ≤ 2 * |a| := by
+                calc |a + b| ≤ |a| + |b| := abs_add_le a b
+                  _ ≤ |a| + |a| := by linarith [hab]
+                  _ = 2 * |a| := by ring
+              have ha_bd : |a| < (fmt.β : ℝ) ^ (ea + ↑fmt.prec) := by
+                rw [hval_a, abs_mul, abs_of_pos (zpow_pos hβ_pos ea)]
+                calc |(ma : ℝ)| * (fmt.β : ℝ) ^ ea
+                    < (fmt.β : ℝ) ^ fmt.prec * (fmt.β : ℝ) ^ ea :=
+                    mul_lt_mul_of_pos_right (by exact_mod_cast hma_bd) (zpow_pos hβ_pos ea)
+                  _ = _ := by rw [← zpow_natCast, ← zpow_add₀ hβ_ne]; congr 1; ring
+              -- |a+b| < 2 * β^(ea+p) = β^(ea+p+1) for β=2
+              -- cexp(a+b) ≤ ea + 1
+              -- Direct: |a+b| ≤ 2|a| < 2β^(ea+p). For β=2: 2β^(ea+p) = β^(ea+p+1).
+              -- cexp(x) ≤ floor(log_β|x|) - p + 1 and |a+b| < β^(ea+p+1)
+              -- so floor(...) ≤ ea+p, hence cexp ≤ ea+1.
+              show cexp fmt (a + b) ≤ ea + 1
+              unfold cexp
+              split
+              · omega -- a + b = 0 case
+              · rename_i hab_ne
+                apply max_le (by omega)
+                have hlogβ : 0 < Real.log (fmt.β : ℝ) := Real.log_pos fmt.β_one_lt
+                have hab_le2 : |a + b| ≤ 2 * |a| := by
+                  calc |a + b| ≤ |a| + |b| := abs_add_le a b
+                    _ ≤ |a| + |a| := by linarith [hab]
+                    _ = 2 * |a| := by ring
+                have ha_bd2 : |a| < (fmt.β : ℝ) ^ (ea + ↑fmt.prec) := by
+                  rw [hval_a, abs_mul, abs_of_pos (zpow_pos hβ_pos ea)]
+                  calc |(ma : ℝ)| * (fmt.β : ℝ) ^ ea
+                      < (fmt.β : ℝ) ^ fmt.prec * (fmt.β : ℝ) ^ ea :=
+                      mul_lt_mul_of_pos_right (by exact_mod_cast hma_bd) (zpow_pos hβ_pos ea)
+                    _ = _ := by rw [← zpow_natCast, ← zpow_add₀ hβ_ne]; congr 1; ring
+                have hab_bd : |a + b| < (fmt.β : ℝ) ^ (ea + (↑fmt.prec : ℤ) + 1) := by
+                  calc |a + b| ≤ 2 * |a| := hab_le2
+                    _ < 2 * (fmt.β : ℝ) ^ (ea + ↑fmt.prec) := by linarith
+                    _ ≤ (fmt.β : ℝ) * (fmt.β : ℝ) ^ (ea + ↑fmt.prec) := by
+                      exact mul_le_mul_of_nonneg_right (by rw [hβ]; push_cast; linarith) (by positivity)
+                    _ = (fmt.β : ℝ) ^ (ea + ↑fmt.prec + 1) := by
+                      rw [mul_comm, ← zpow_add_one₀ hβ_ne]
+                have hlog_bd : Real.log |a + b| < (ea + (↑fmt.prec : ℤ) + 1) * Real.log (fmt.β : ℝ) := by
+                  calc Real.log |a + b| < Real.log ((fmt.β : ℝ) ^ (ea + (↑fmt.prec : ℤ) + 1)) :=
+                    Real.log_lt_log (abs_pos.mpr hab_ne) hab_bd
+                    _ = (ea + ↑fmt.prec + 1) * Real.log (fmt.β : ℝ) :=
+                        by rw [Real.log_zpow]; push_cast; ring
+                have : Real.log |a + b| / Real.log (fmt.β : ℝ) < ea + (↑fmt.prec : ℤ) + 1 := by
+                  rwa [div_lt_iff₀ hlogβ]
+                have hfl := Int.floor_le (Real.log |a + b| / Real.log (fmt.β : ℝ))
+                have hfloor_lt : (⌊Real.log |a + b| / Real.log (fmt.β : ℝ)⌋ : ℝ) < ea + ↑fmt.prec + 1 := by
+                  have := this; push_cast at this ⊢; linarith
+                have : ⌊Real.log |a + b| / Real.log (fmt.β : ℝ)⌋ < ea + ↑fmt.prec + 1 := by
+                  exact_mod_cast hfloor_lt
+                omega
+          -- |j| * β^ea ≤ β^ec / 2 ≤ β^(ea+1) / 2 = β^ea (for β=2)
+          -- So |j| ≤ 1 < β^p
+          have hj_le_one : |(j : ℝ)| ≤ 1 := by
+            rw [he0_eq] at hulp
+            have hbp_ea := zpow_pos hβ_pos ea
+            have hec_bpow : (fmt.β : ℝ) ^ ec ≤ (fmt.β : ℝ) ^ (ea + 1) :=
+              zpow_le_zpow_right₀ (by have := fmt.β_one_lt; exact_mod_cast this.le : (1 : ℝ) ≤ fmt.β) hec_le
+            have : |(j : ℝ)| * (fmt.β : ℝ) ^ ea ≤ (fmt.β : ℝ) ^ (ea + 1) / 2 := by
+              simp only [bpow] at hulp; linarith
+            rw [zpow_add₀ hβ_ne, zpow_one, hβ] at this
+            push_cast at this
+            nlinarith [zpow_pos (show (0 : ℝ) < 2 from by norm_num) ea]
+          have : |(j : ℤ)| ≤ 1 := by exact_mod_cast hj_le_one
+          calc |j| ≤ 1 := this
+            _ < (fmt.β : ℤ) ^ fmt.prec := by
+              have := fmt.hprec; have := fmt.hβ
+              exact_mod_cast Nat.one_lt_pow (by omega) (by omega)
+        · -- eb < ea, so e0 = eb. Use |err| ≤ |b| bound.
+          push Not at hea_le_eb
+          have he0_eq : e0 = eb := by rw [he0_def]; exact min_eq_right (le_of_lt hea_le_eb)
+          have hbp_eb := zpow_pos hβ_pos eb
+          have h1 : |b - (s - a)| = |(j : ℝ)| * (fmt.β : ℝ) ^ e0 := by
+            rw [hval_err, abs_mul, abs_of_pos hbp_e0]
+          have h2 : |b| = |(mb : ℝ)| * (fmt.β : ℝ) ^ eb := by
+            rw [hval_b, abs_mul, abs_of_pos hbp_eb]
+          have h3 : |(j : ℝ)| ≤ |(mb : ℝ)| := by
+            have := herr_le; rw [h1, h2, he0_eq] at this
+            exact le_of_mul_le_mul_right this hbp_eb
+          calc |j| ≤ |mb| := by exact_mod_cast h3
+            _ < _ := hmb
+      exact ⟨j, e0, hval_err, hj_bound, he0_emin⟩
+    · -- ec < e0: (a+b)/bpow(ec) is an integer, so round is exact, err = 0
+      push Not at hec_ge
+      simp only [herr_eq]
+      have : s = a + b := by
+        -- (a+b)/bpow(ec) is an integer multiple of β^(e0-ec), hence an integer.
+        -- So roundNNE is exact.
+        change roundNNE fmt (a + b) = a + b
+        apply roundNNE_repr_fixed
+        -- a + b is representable: at exponent ec, its scaled mantissa is an integer < β^p
+        -- Actually easier: show a+b is representable at exponent e0.
+        obtain ⟨k, hk⟩ := hab_mul
+        -- |k| < β^p follows from scaled_abs_lt applied at a+b
+        -- a+b = k * β^e0 and we need |k| < β^p
+        -- |a+b| / β^e0 = |k|. And |a+b| / β^cexp(a+b) < β^p (from scaled_abs_lt).
+        -- |k| = |a+b| / β^e0 = (|a+b| / β^ec) * β^(ec - e0).
+        -- Since ec < e0: β^(ec-e0) < 1 (for β=2, ec-e0 ≤ -1).
+        -- |k| < β^p * β^(ec-e0) < β^p.
+        have hk_bd : |k| < (fmt.β : ℤ) ^ fmt.prec := by
+          have hsc := scaled_abs_lt fmt (a + b)
+          -- |a+b / bpow(ec)| < β^p
+          -- Save cexp value before rewriting a+b
+          have hec_ab : cexp fmt (a + b) = ec := hec_def.symm
+          rw [hec_ab] at hsc; simp only [bpow] at hsc
+          rw [hk] at hsc
+          -- hsc : |↑k * ↑fmt.β ^ e0 / ↑fmt.β ^ ec| < ↑fmt.β ^ fmt.prec
+          have hpow_e0 := zpow_pos hβ_pos e0
+          have hpow_ec := zpow_pos hβ_pos ec
+          rw [abs_div, abs_mul, abs_of_pos hpow_e0, abs_of_pos hpow_ec] at hsc
+          -- |(k : ℝ)| * β^e0 / β^ec < β^p
+          have he0_ec_pos : 0 < e0 - ec := by omega
+          have hpow_ge : (1 : ℝ) ≤ (fmt.β : ℝ) ^ (e0 - ec) :=
+            one_le_zpow₀ (by rw [hβ]; norm_num) (by omega)
+          have : |(k : ℝ)| < (fmt.β : ℝ) ^ fmt.prec := by
+            have hdiv : |(k : ℝ)| * (fmt.β : ℝ) ^ e0 / (fmt.β : ℝ) ^ ec =
+                |(k : ℝ)| * (fmt.β : ℝ) ^ (e0 - ec) := by
+              rw [mul_div_assoc, ← zpow_sub₀ hβ_ne]
+            rw [hdiv] at hsc
+            calc |(k : ℝ)| ≤ |(k : ℝ)| * (fmt.β : ℝ) ^ (e0 - ec) :=
+                  le_mul_of_one_le_right (abs_nonneg _) hpow_ge
+              _ < _ := hsc
+          exact_mod_cast this
+        exact ⟨k, e0, hk, hk_bd, he0_emin⟩
+      rw [this, sub_self]
+      exact zero_isRepresentable fmt
 
 /-- **Fast2Sum correctness**: `a + b = s + t` exactly when `|a| ≥ |b|` and β = 2. -/
 theorem fast2Sum_exact {fmt : FloatFormat} (hβ : fmt.β = 2) {a b : ℝ}
