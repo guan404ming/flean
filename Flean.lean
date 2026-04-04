@@ -4,3 +4,7 @@ import Flean.Arith
 import Flean.Bridge
 import Flean.Apps.TwoSum
 import Flean.Apps.DotProd
+import Flean.Apps.ExpansionSum
+import Flean.Apps.AdaptiveExpansionSum
+import Flean.Apps.KahanSum
+import Flean.Apps.StableLogSumExp

@@ -20,6 +20,9 @@ Flean/
 │                   cast chain composition, relative error, ULP, Sterbenz
 ├── Binary/         Bit-level IEEE 754 (BitVec packing, classification, special values)
 ├── Arith/          Arithmetic operations (add, mul, div, sqrt, FMA, comparisons)
+├── Apps/           Case studies: Fast2Sum, mixed-precision dot product,
+│                   floating-point expansions, adaptive expansion summation,
+│                   Kahan kernel exactness
 ├── Bridge.lean     Refinement connecting bit-level and real-valued models
 └── Tactics/        Automation (flean_cast_safe, flean_chain_bound,
                     flean_numeric_bound, flean_quant_bound)
@@ -43,6 +46,21 @@ example (x : ℝ) (hx : (2 : ℝ) ^ ((-14 : ℤ) + 11 - 1) ≤ |x|) :
     |x - roundNNE binary16 x| ≤ 1 / 2048 * |x| := by
   exact f16_relative_error x hx
 ```
+
+## Case Study Storyline
+
+The current `Apps/` directory now contains a coherent compensated-accumulation
+storyline rather than isolated examples:
+
+- `TwoSum`: verified error-free transform kernel (`fast2Sum`)
+- `ExpansionSum`: exact expansion distillation for magnitude-ordered streams
+- `AdaptiveExpansionSum`: local magnitude choice removes the global ordering assumption
+- `KahanSum`: whole-algorithm compensated summation, with exact fold invariant
+  and a tight final forward-error identity `|exactSum - s_final| = |c_final|`
+- `DotProd`: mixed-precision fp16/fp32 ML-style accumulation and error analysis
+
+This gives Flean both an exact-EFT line of case studies and a mixed-precision
+ML kernel line, which is much closer to a CPP/CAV-style evaluation story.
 
 ## Comparison with Flocq
 
