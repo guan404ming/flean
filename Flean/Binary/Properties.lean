@@ -169,6 +169,29 @@ theorem isBitRepresentable_isRepresentable {spec : BinarySpec} {x : ℝ}
   refine ⟨m, e, ?_, hm, he_lo⟩
   rw [hval]; simp only [BinarySpec.toFormat]; push_cast; rfl
 
+theorem zero_isBitRepresentable (spec : BinarySpec) :
+    isBitRepresentable spec 0 := by
+  refine ⟨0, spec.toFormat.emin, by simp, ?_, le_rfl, ?_, Or.inr rfl⟩
+  · simp
+  · show spec.toFormat.emin ≤ (spec.bias : ℤ) - spec.sigWidth
+    have hpow : 2 ≤ 2 ^ (spec.expWidth - 1) := by
+      calc (2 : ℕ) = 2 ^ 1 := (pow_one 2).symm
+        _ ≤ 2 ^ (spec.expWidth - 1) :=
+          Nat.pow_le_pow_right (by omega) (by have := spec.hExp; omega)
+    have hbias_ge_one : (1 : ℤ) ≤ spec.bias := by
+      exact_mod_cast (show 1 ≤ spec.bias from by
+        unfold BinarySpec.bias
+        omega)
+    simp [BinarySpec.toFormat]
+    omega
+
+/-- Exponent all-ones and zero significand classify as infinity. -/
+theorem FloatBits.fromFields_classify_infinite {spec : BinarySpec} (s : BitVec 1) :
+    (FloatBits.fromFields s (BitVec.allOnes spec.expWidth) 0).classify = .infinite := by
+  unfold classify
+  simp only [fromFields_isExpMax, fromFields_isExpZero, fromFields_sigField]
+  simp
+
 /-- Forward: toReal of a finite FloatBits is bit-representable. -/
 theorem FloatBits.toReal_isBitRepresentable {spec : BinarySpec} (f : FloatBits spec)
     (hfin : f.classify = .normal ∨ f.classify = .subnormal) :
@@ -271,11 +294,12 @@ theorem FloatBits.toReal_isBitRepresentable {spec : BinarySpec} (f : FloatBits s
 /-! ## Reverse bridge helpers -/
 
 def FloatBits.zero (spec : BinarySpec) : FloatBits spec :=
-  FloatBits.fromFields 0 0 0
+  FloatBits.posZero spec
 
-theorem FloatBits.zero_classify {spec : BinarySpec} :
-    (FloatBits.zero spec).classify = .zero := by
-  unfold zero classify
+theorem FloatBits.fromFields_classify_zero
+    {spec : BinarySpec} (s : BitVec 1) :
+    (FloatBits.fromFields s (0 : BitVec spec.expWidth) (0 : BitVec spec.sigWidth)).classify = .zero := by
+  unfold classify
   simp only [fromFields_isExpMax, fromFields_isExpZero, fromFields_sigField]
   have h0 : (0 : BitVec spec.expWidth) ≠ BitVec.allOnes spec.expWidth := by
     intro hab
@@ -284,11 +308,38 @@ theorem FloatBits.zero_classify {spec : BinarySpec} :
     have : 0 < 2 ^ spec.expWidth - 1 :=
       Nat.sub_pos_of_lt (Nat.one_lt_two_pow_iff.mpr (by have := spec.hExp; omega))
     exact absurd h1.symm (ne_of_gt this)
-  simp only [beq_iff_eq, h0, ite_false, ite_true]
+  rw [show ((0 : BitVec spec.expWidth) == BitVec.allOnes spec.expWidth) = false from
+      beq_eq_false_iff_ne.mpr h0]
+  simp
+
+theorem FloatBits.zero_classify {spec : BinarySpec} :
+    (FloatBits.zero spec).classify = .zero := by
+  simpa [FloatBits.zero] using
+    (FloatBits.fromFields_classify_zero (spec := spec) (s := (0 : BitVec 1)))
 
 theorem FloatBits.zero_toReal {spec : BinarySpec} :
     (FloatBits.zero spec).toReal = 0 := by
   unfold toReal; rw [zero_classify]
+
+theorem FloatBits.posZero_classify {spec : BinarySpec} :
+    (FloatBits.posZero spec).classify = .zero := by
+  simpa [FloatBits.posZero] using
+    (FloatBits.fromFields_classify_zero (spec := spec) (s := (0 : BitVec 1)))
+
+theorem FloatBits.posZero_toReal {spec : BinarySpec} :
+    (FloatBits.posZero spec).toReal = 0 := by
+  unfold FloatBits.toReal
+  rw [FloatBits.posZero_classify]
+
+theorem FloatBits.negZero_classify {spec : BinarySpec} :
+    (FloatBits.negZero spec).classify = .zero := by
+  simpa [FloatBits.negZero] using
+    (FloatBits.fromFields_classify_zero (spec := spec) (s := (BitVec.ofNat 1 1)))
+
+theorem FloatBits.negZero_toReal {spec : BinarySpec} :
+    (FloatBits.negZero spec).toReal = 0 := by
+  unfold FloatBits.toReal
+  rw [FloatBits.negZero_classify]
 
 theorem FloatBits.fromFields_classify_subnormal
     {spec : BinarySpec} (s : BitVec 1)
@@ -447,5 +498,96 @@ theorem FloatBits.exists_of_isBitRepresentable
       rcases Int.lt_or_lt_of_ne hm0 with hm_neg | hm_pos
       · simp only [show ¬0 < m from not_lt.mpr hm_neg.le, ite_false]
       · simp only [hm_pos, ite_true]
+
+/-- Pack a real number back into a finite `FloatBits` value when it is
+bit-representable; otherwise saturate to an infinity carrying the sign of the
+real value. This helper is convenient for spec-backed arithmetic wrappers. -/
+noncomputable def FloatBits.ofRealOrInf (spec : BinarySpec) (x : ℝ) : FloatBits spec := by
+  classical
+  by_cases hx : isBitRepresentable spec x
+  · exact Classical.choose (FloatBits.exists_of_isBitRepresentable hx)
+  · exact
+      FloatBits.fromFields
+        (if x < 0 then (1 : BitVec 1) else 0)
+        (BitVec.allOnes spec.expWidth)
+        0
+
+/-- Sign-aware packing helper used by IEEE-preserving arithmetic wrappers.
+When the rounded real value is zero, `negZero` selects between `+0` and `-0`. -/
+noncomputable def FloatBits.ofRealOrInfSigned (spec : BinarySpec) (x : ℝ)
+    (negZero : Bool) : FloatBits spec := by
+  classical
+  by_cases hx : isBitRepresentable spec x
+  · by_cases hx0 : x = 0
+    · exact if negZero then FloatBits.negZero spec else FloatBits.posZero spec
+    · exact Classical.choose (FloatBits.exists_of_isBitRepresentable hx)
+  · exact
+      FloatBits.fromFields
+        (if x < 0 then (1 : BitVec 1) else 0)
+        (BitVec.allOnes spec.expWidth)
+        0
+
+theorem FloatBits.ofRealOrInf_toReal_of_isBitRepresentable {spec : BinarySpec} {x : ℝ}
+    (hx : isBitRepresentable spec x) :
+    (FloatBits.ofRealOrInf spec x).toReal = x := by
+  classical
+  simp [FloatBits.ofRealOrInf, hx]
+  exact (Classical.choose_spec (FloatBits.exists_of_isBitRepresentable hx)).2
+
+theorem FloatBits.ofRealOrInf_finite_of_isBitRepresentable {spec : BinarySpec} {x : ℝ}
+    (hx : isBitRepresentable spec x) :
+    (FloatBits.ofRealOrInf spec x).classify = .normal ∨
+      (FloatBits.ofRealOrInf spec x).classify = .subnormal ∨
+      (FloatBits.ofRealOrInf spec x).classify = .zero := by
+  classical
+  simp [FloatBits.ofRealOrInf, hx]
+  exact (Classical.choose_spec (FloatBits.exists_of_isBitRepresentable hx)).1
+
+theorem FloatBits.ofRealOrInf_classify_of_not_isBitRepresentable {spec : BinarySpec} {x : ℝ}
+    (hx : ¬ isBitRepresentable spec x) :
+    (FloatBits.ofRealOrInf spec x).classify = .infinite := by
+  classical
+  by_cases hneg : x < 0
+  · simpa [FloatBits.ofRealOrInf, hx, hneg] using
+      (FloatBits.fromFields_classify_infinite (spec := spec) (s := (1 : BitVec 1)))
+  · simpa [FloatBits.ofRealOrInf, hx, hneg] using
+      (FloatBits.fromFields_classify_infinite (spec := spec) (s := (0 : BitVec 1)))
+
+theorem FloatBits.ofRealOrInfSigned_toReal_of_isBitRepresentable {spec : BinarySpec} {x : ℝ}
+    (negZero : Bool) (hx : isBitRepresentable spec x) :
+    (FloatBits.ofRealOrInfSigned spec x negZero).toReal = x := by
+  classical
+  by_cases hx0 : x = 0
+  · subst hx0
+    by_cases hneg : negZero
+    · simp [FloatBits.ofRealOrInfSigned, hx, hneg, FloatBits.negZero_toReal]
+    · simp [FloatBits.ofRealOrInfSigned, hx, hneg, FloatBits.posZero_toReal]
+  · simp [FloatBits.ofRealOrInfSigned, hx, hx0]
+    exact (Classical.choose_spec (FloatBits.exists_of_isBitRepresentable hx)).2
+
+theorem FloatBits.ofRealOrInfSigned_finite_of_isBitRepresentable {spec : BinarySpec} {x : ℝ}
+    (negZero : Bool) (hx : isBitRepresentable spec x) :
+    (FloatBits.ofRealOrInfSigned spec x negZero).classify = .normal ∨
+      (FloatBits.ofRealOrInfSigned spec x negZero).classify = .subnormal ∨
+      (FloatBits.ofRealOrInfSigned spec x negZero).classify = .zero := by
+  classical
+  by_cases hx0 : x = 0
+  · subst hx0
+    by_cases hneg : negZero
+    · simp [FloatBits.ofRealOrInfSigned, hx, hneg, FloatBits.negZero_classify]
+    · simp [FloatBits.ofRealOrInfSigned, hx, hneg, FloatBits.posZero_classify]
+  · simp [FloatBits.ofRealOrInfSigned, hx, hx0]
+    exact (Classical.choose_spec (FloatBits.exists_of_isBitRepresentable hx)).1
+
+theorem FloatBits.ofRealOrInfSigned_classify_of_not_isBitRepresentable
+    {spec : BinarySpec} {x : ℝ} (negZero : Bool)
+    (hx : ¬ isBitRepresentable spec x) :
+    (FloatBits.ofRealOrInfSigned spec x negZero).classify = .infinite := by
+  classical
+  by_cases hneg : x < 0
+  · simpa [FloatBits.ofRealOrInfSigned, hx, hneg] using
+      (FloatBits.fromFields_classify_infinite (spec := spec) (s := (1 : BitVec 1)))
+  · simpa [FloatBits.ofRealOrInfSigned, hx, hneg] using
+      (FloatBits.fromFields_classify_infinite (spec := spec) (s := (0 : BitVec 1)))
 
 end Flean

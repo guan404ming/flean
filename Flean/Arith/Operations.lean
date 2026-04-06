@@ -1,6 +1,7 @@
-import Flean.Binary.Defs
+import Flean.Binary.Properties
 import Flean.Core.Rounding
 import Flean.Core.RoundProps
+import Flean.Arith.Spec
 import Flean.Arith.Exceptions
 import Flean.Arith.RoundingHelper
 
@@ -14,6 +15,38 @@ and all required IEEE 754-2019 operations.
 
 namespace Flean
 
+noncomputable def inexactFlag (exact rounded : ℝ) : Bool := by
+  classical
+  exact decide (rounded ≠ exact)
+
+noncomputable def overflowFlag (fmt : FloatFormat) (exact : ℝ) : Bool := by
+  classical
+  exact decide (maxFinite fmt < |exact|)
+
+noncomputable def underflowFlag (fmt : FloatFormat) (exact rounded : ℝ) : Bool := by
+  classical
+  exact decide (rounded ≠ exact ∧ exact ≠ 0 ∧ |exact| < minNormal fmt)
+
+noncomputable def addZeroSign {spec : BinarySpec}
+    (a b : FloatBits spec) (mode : RoundingMode) : Bool :=
+  if a.classify = .zero ∧ b.classify = .zero then
+    if a.isNeg == b.isNeg then a.isNeg else mode = .roundTowardNegative
+  else
+    let exact := a.toReal + b.toReal
+    if exact < 0 then true else if exact > 0 then false else mode = .roundTowardNegative
+
+def mulZeroSign {spec : BinarySpec} (a b : FloatBits spec) : Bool :=
+  a.isNeg != b.isNeg
+
+def unaryNaNResult {spec : BinarySpec} (a : FloatBits spec) : OpResult (FloatBits spec) :=
+  { value := a.quietedNaN, flags := { invalidOperation := a.isSignalingNaN } }
+
+def binaryNaNResult {spec : BinarySpec} (a b : FloatBits spec) : OpResult (FloatBits spec) :=
+  if a.classify == .nan then
+    { value := a.quietedNaN, flags := { invalidOperation := a.isSignalingNaN || b.isSignalingNaN } }
+  else
+    { value := b.quietedNaN, flags := { invalidOperation := a.isSignalingNaN || b.isSignalingNaN } }
+
 /-- Copy sign from `src` to `dst`. -/
 def FloatBits.copySign {spec : BinarySpec} (dst src : FloatBits spec) : FloatBits spec :=
   let signMask := BitVec.ofNat spec.totalWidth (1 <<< (spec.expWidth + spec.sigWidth))
@@ -25,8 +58,8 @@ def FloatBits.copySign {spec : BinarySpec} (dst src : FloatBits spec) : FloatBit
 def FloatBits.addSpecial {spec : BinarySpec}
     (a b : FloatBits spec) : Option (OpResult (FloatBits spec)) :=
   match a.classify, b.classify with
-  | .nan, _ => some { value := a }
-  | _, .nan => some { value := b }
+  | .nan, _ => some (binaryNaNResult a b)
+  | _, .nan => some (binaryNaNResult a b)
   | .infinite, .infinite =>
     if a.isNeg == b.isNeg then some { value := a }
     else some { value := FloatBits.quietNaN spec, flags := { invalidOperation := true } }
@@ -38,15 +71,15 @@ def FloatBits.addSpecial {spec : BinarySpec}
 def FloatBits.mulSpecial {spec : BinarySpec}
     (a b : FloatBits spec) : Option (OpResult (FloatBits spec)) :=
   match a.classify, b.classify with
-  | .nan, _ => some { value := a }
-  | _, .nan => some { value := b }
+  | .nan, _ => some (binaryNaNResult a b)
+  | _, .nan => some (binaryNaNResult a b)
   | .infinite, .zero | .zero, .infinite =>
     some { value := FloatBits.quietNaN spec, flags := { invalidOperation := true } }
   | .infinite, _ | _, .infinite =>
     let result := if a.isNeg == b.isNeg then FloatBits.posInf spec else FloatBits.negInf spec
     some { value := result }
   | .zero, _ | _, .zero =>
-    let result := if a.isNeg == b.isNeg then FloatBits.posZero spec else FloatBits.negZero spec
+    let result := if mulZeroSign a b then FloatBits.negZero spec else FloatBits.posZero spec
     some { value := result }
   | _, _ => none
 
@@ -54,8 +87,8 @@ def FloatBits.mulSpecial {spec : BinarySpec}
 def FloatBits.divSpecial {spec : BinarySpec}
     (a b : FloatBits spec) : Option (OpResult (FloatBits spec)) :=
   match a.classify, b.classify with
-  | .nan, _ => some { value := a }
-  | _, .nan => some { value := b }
+  | .nan, _ => some (binaryNaNResult a b)
+  | _, .nan => some (binaryNaNResult a b)
   | .infinite, .infinite | .zero, .zero =>
     some { value := FloatBits.quietNaN spec, flags := { invalidOperation := true } }
   | .infinite, _ | _, .zero =>
@@ -104,16 +137,20 @@ def FloatBits.addFiniteOppositeSign {spec : BinarySpec} (f1 f2 : FloatBits spec)
   else { value := f1 }
 
 /-- Main addition function. -/
-def FloatBits.add {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) : OpResult (FloatBits spec) :=
+noncomputable def FloatBits.add {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
+    OpResult (FloatBits spec) :=
   match f1.addSpecial f2 with
   | some res => res
   | none =>
-    let (e1, e2) := (f1.expField.toNat, f2.expField.toNat)
-    let (m1, m2) := (f1.sigField.toNat, f2.sigField.toNat)
-    let is_f1_larger := if e1 != e2 then e1 > e2 else m1 ≥ m2
-    let (large, small) := if is_f1_larger then (f1, f2) else (f2, f1)
-    if f1.isNeg == f2.isNeg then large.addFiniteSameSign small mode
-    else large.addFiniteOppositeSign small mode
+      let exact := f1.toReal + f2.toReal
+      let rounded := addSpec spec.toFormat mode f1.toReal f2.toReal
+      let negZero := addZeroSign f1 f2 mode
+      let flags := {
+        inexact := inexactFlag exact rounded
+        overflow := overflowFlag spec.toFormat exact
+        underflow := underflowFlag spec.toFormat exact rounded
+      }
+      { value := FloatBits.ofRealOrInfSigned spec rounded negZero, flags := flags }
 
 /-- Perform finite floating-point multiplication. -/
 def FloatBits.mulFinite {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
@@ -129,11 +166,19 @@ def FloatBits.mulFinite {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : Rou
   else roundAndPack mode isNeg rawExp prod
 
 /-- Main multiplication function. -/
-def FloatBits.mul {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) : 
+noncomputable def FloatBits.mul {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
     OpResult (FloatBits spec) :=
   match f1.mulSpecial f2 with
   | some res => res
-  | none => f1.mulFinite f2 mode
+  | none =>
+      let exact := f1.toReal * f2.toReal
+      let rounded := mulSpec spec.toFormat mode f1.toReal f2.toReal
+      let flags := {
+        inexact := inexactFlag exact rounded
+        overflow := overflowFlag spec.toFormat exact
+        underflow := underflowFlag spec.toFormat exact rounded
+      }
+      { value := FloatBits.ofRealOrInfSigned spec rounded (mulZeroSign f1 f2), flags := flags }
 
 /-- Perform finite floating-point division. -/
 def FloatBits.divFinite {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
@@ -152,11 +197,19 @@ def FloatBits.divFinite {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : Rou
   else roundAndPack mode isNeg rawExp (q_with_sticky / 2)
 
 /-- Main division function. -/
-def FloatBits.div {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) : 
+noncomputable def FloatBits.div {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
     OpResult (FloatBits spec) :=
   match f1.divSpecial f2 with
   | some res => res
-  | none => f1.divFinite f2 mode
+  | none =>
+      let exact := f1.toReal / f2.toReal
+      let rounded := divSpec spec.toFormat mode f1.toReal f2.toReal
+      let flags := {
+        inexact := inexactFlag exact rounded
+        overflow := overflowFlag spec.toFormat exact
+        underflow := underflowFlag spec.toFormat exact rounded
+      }
+      { value := FloatBits.ofRealOrInfSigned spec rounded (mulZeroSign f1 f2), flags := flags }
 
 /-- scaleB(x, N): Compute x * 2^N by adjusting the exponent. -/
 def FloatBits.scaleB {spec : BinarySpec} (f : FloatBits spec) (N : Int) : 

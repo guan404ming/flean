@@ -19,6 +19,9 @@ namespace Flean
 theorem machineEpsilon_binary16_val : machineEpsilon binary16 = (1 : ℝ) / 1024 := by
   rw [machineEpsilon_binary16]; norm_num
 
+theorem machineEpsilon_bfloat16_val : machineEpsilon bfloat16 = (1 : ℝ) / 128 := by
+  rw [machineEpsilon_bfloat16]; norm_num
+
 theorem machineEpsilon_binary32_val : machineEpsilon binary32 = (1 : ℝ) / 8388608 := by
   rw [machineEpsilon_binary32]; norm_num
 
@@ -40,6 +43,13 @@ theorem f32_relative_error (x : ℝ)
     |x - roundNNE binary32 x| ≤ (1 : ℝ) / 16777216 * |x| := by
   have h := roundNNE_error_rel binary32 hx
   rw [machineEpsilon_binary32_val] at h; linarith
+
+/-- bfloat16 rounding: relative error ≤ ε/2 = 1/256 ≈ 3.91e-3. -/
+theorem bf16_relative_error (x : ℝ)
+    (hx : (2 : ℝ) ^ ((-126 : ℤ) + (8 : ℤ) - 1) ≤ |x|) :
+    |x - roundNNE bfloat16 x| ≤ (1 : ℝ) / 256 * |x| := by
+  have h := roundNNE_error_rel bfloat16 hx
+  rw [machineEpsilon_bfloat16_val] at h; linarith
 
 /-- f64 rounding: relative error ≤ ε/2 = 1/9007199254740992 ≈ 1.11e-16. -/
 theorem f64_relative_error (x : ℝ)
@@ -77,22 +87,24 @@ def evalFleanNumericBound : Tactic := fun _ => do
   let tactics ← `(tactic|
     first
     -- Try rewriting machineEpsilon to concrete values, then linarith
-    | (simp only [machineEpsilon_binary16_val, machineEpsilon_binary32_val,
-                  machineEpsilon_binary64_val, machineEpsilon_binary16,
+    | (simp only [machineEpsilon_binary16_val, machineEpsilon_bfloat16_val,
+                  machineEpsilon_binary32_val, machineEpsilon_binary64_val,
+                  machineEpsilon_binary16, machineEpsilon_bfloat16,
                   machineEpsilon_binary32, machineEpsilon_binary64] at *;
        linarith)
     -- Try with norm_num after rewriting
-    | (simp only [machineEpsilon_binary16_val, machineEpsilon_binary32_val,
-                  machineEpsilon_binary64_val] at *;
+    | (simp only [machineEpsilon_binary16_val, machineEpsilon_bfloat16_val,
+                  machineEpsilon_binary32_val, machineEpsilon_binary64_val] at *;
        norm_num at *; linarith)
     -- Direct application of concrete error theorems
     | exact f16_relative_error _ ‹_›
+    | exact bf16_relative_error _ ‹_›
     | exact f32_relative_error _ ‹_›
     | exact f64_relative_error _ ‹_›
     -- Combine with chain bound
     | (have := cast_chain_two_bound _ _ ‹_› ‹_›;
-       simp only [machineEpsilon_binary16_val, machineEpsilon_binary32_val,
-                  machineEpsilon_binary64_val] at *;
+       simp only [machineEpsilon_binary16_val, machineEpsilon_bfloat16_val,
+                  machineEpsilon_binary32_val, machineEpsilon_binary64_val] at *;
        linarith)
   )
   evalTactic tactics
@@ -108,6 +120,11 @@ example (x : ℝ) (hx : (2 : ℝ) ^ ((-14 : ℤ) + 11 - 1) ≤ |x|) :
 example (x : ℝ) (hx : (2 : ℝ) ^ ((-126 : ℤ) + 24 - 1) ≤ |x|) :
     |x - roundNNE binary32 x| ≤ 1 / 16777216 * |x| := by
   exact f32_relative_error x hx
+
+-- bf16 relative error ≤ 1/256 ≈ 3.91e-3
+example (x : ℝ) (hx : (2 : ℝ) ^ ((-126 : ℤ) + 8 - 1) ≤ |x|) :
+    |x - roundNNE bfloat16 x| ≤ 1 / 256 * |x| := by
+  exact bf16_relative_error x hx
 
 -- f64 relative error ≤ 1/9007199254740992 ≈ 1.11e-16
 example (x : ℝ) (hx : (2 : ℝ) ^ ((-1022 : ℤ) + 53 - 1) ≤ |x|) :

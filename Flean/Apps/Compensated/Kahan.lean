@@ -1,3 +1,4 @@
+import Flean.Apps.Common.List
 import Flean.Apps.EFT.ExpansionSum
 
 /-!
@@ -41,11 +42,107 @@ def KahanInput (fmt : FloatFormat) : List ℝ → Prop
   | [] => True
   | x :: xs => isRepresentable fmt x ∧ KahanChain fmt (x, 0) xs
 
+/-- Stronger, compositional sufficient condition for `KahanInput`:
+every new addend is no larger than the current exact running sum, and every
+running prefix sum remains representable. This keeps Kahan on the exact
+zero-compensation path. -/
+def KahanPrefixChain (fmt : FloatFormat) : ℝ → List ℝ → Prop
+  | s, [] => isRepresentable fmt s
+  | s, x :: xs =>
+      isRepresentable fmt s ∧
+      isRepresentable fmt x ∧
+      |x| ≤ |s| ∧
+      isRepresentable fmt (s + x) ∧
+      KahanPrefixChain fmt (s + x) xs
+
+/-- List-level version of `KahanPrefixChain`, started from the first input. -/
+def KahanPrefixInput (fmt : FloatFormat) : List ℝ → Prop
+  | [] => True
+  | x :: xs => isRepresentable fmt x ∧ KahanPrefixChain fmt x xs
+
+/-- Running prefix sums remain representable, without yet imposing the Kahan
+magnitude side condition. -/
+def RunningSumChain (fmt : FloatFormat) : ℝ → List ℝ → Prop
+  | s, [] => isRepresentable fmt s
+  | s, x :: xs =>
+      isRepresentable fmt x ∧
+      isRepresentable fmt (s + x) ∧
+      RunningSumChain fmt (s + x) xs
+
+/-- User-facing running-sum representability condition started from the first
+input. -/
+def RunningSumInput (fmt : FloatFormat) : List ℝ → Prop
+  | [] => True
+  | x :: xs => isRepresentable fmt x ∧ RunningSumChain fmt x xs
+
+/-- Nonincreasing real stream. -/
+def Nonincreasing : List ℝ → Prop
+  | [] => True
+  | [_] => True
+  | x :: y :: xs => y ≤ x ∧ Nonincreasing (y :: xs)
+
+/-- Easy-to-check sufficient condition for Kahan exactness:
+the stream is nonnegative, nonincreasing, and every running prefix sum is
+representable. -/
+def KahanMonotoneChain (fmt : FloatFormat) : ℝ → ℝ → List ℝ → Prop
+  | s, prev, [] => isRepresentable fmt s ∧ 0 ≤ prev ∧ prev ≤ s
+  | s, prev, x :: xs =>
+      isRepresentable fmt s ∧
+      0 ≤ prev ∧
+      prev ≤ s ∧
+      isRepresentable fmt x ∧
+      0 ≤ x ∧
+      x ≤ prev ∧
+      isRepresentable fmt (s + x) ∧
+      KahanMonotoneChain fmt (s + x) x xs
+
+/-- List-level version of `KahanMonotoneChain`, started from the first input. -/
+def KahanMonotoneInput (fmt : FloatFormat) : List ℝ → Prop
+  | [] => True
+  | x :: xs => isRepresentable fmt x ∧ 0 ≤ x ∧ KahanMonotoneChain fmt x x xs
+
 /-- Kahan summation started from the first element with zero compensation.
 The empty list returns `(0,0)`. -/
 noncomputable def kahanSum (fmt : FloatFormat) : List ℝ → ℝ × ℝ
   | [] => (0, 0)
   | x :: xs => kahanFold fmt (x, 0) xs
+
+/-- A posteriori one-step value-error budget for Kahan. It charges the rounding
+of the corrected addend `x - c` and the rounding of the compensation update. -/
+noncomputable def kahanStepFallbackBudget (fmt : FloatFormat) (s c x : ℝ) : ℝ :=
+  let y := roundNNE fmt (x - c)
+  let t := roundNNE fmt (s + y)
+  bpow fmt (cexp fmt (x - c)) / 2 + bpow fmt (cexp fmt ((t - s) - y)) / 2
+
+/-- Recursive a posteriori budget for a Kahan fold started from an arbitrary
+state. This accumulates the local fallback budgets actually encountered along
+the computed run. -/
+noncomputable def kahanFoldFallbackBudget (fmt : FloatFormat) :
+    ℝ × ℝ → List ℝ → ℝ
+  | _, [] => 0
+  | sc, x :: xs =>
+      kahanStepFallbackBudget fmt sc.1 sc.2 x +
+        kahanFoldFallbackBudget fmt (kahanStep fmt sc.1 sc.2 x) xs
+
+/-- User-facing fallback budget for `kahanSum`. -/
+noncomputable def kahanSumFallbackBudget (fmt : FloatFormat) : List ℝ → ℝ
+  | [] => 0
+  | x :: xs => kahanFoldFallbackBudget fmt (x, 0) xs
+
+theorem kahanStep_zero_of_repr_sum {fmt : FloatFormat} {s x : ℝ}
+    (_hs : isRepresentable fmt s) (hx : isRepresentable fmt x)
+    (hsx : isRepresentable fmt (s + x)) :
+    kahanStep fmt s 0 x = (s + x, 0) := by
+  have hy : roundNNE fmt (x - 0) = x := by
+    simpa using roundNNE_repr_fixed fmt hx
+  have ht : roundNNE fmt (s + x) = s + x := by
+    simpa using roundNNE_repr_fixed fmt hsx
+  dsimp [kahanStep]
+  rw [hy]
+  change (roundNNE fmt (s + x), roundNNE fmt ((roundNNE fmt (s + x) - s) - x)) = (s + x, 0)
+  rw [ht]
+  have hzero : ((s + x) - s) - x = 0 := by ring
+  rw [hzero, roundNNE_zero]
 
 /-- With zero initial compensation and the usual `fast2Sum` side condition,
 the Kahan step is exactly the `fast2Sum` head together with the negated
@@ -188,6 +285,39 @@ theorem kahanStep_zero_exact_binary32 {s x : ℝ}
     s + x = s' - c' :=
   kahanStep_zero_exact (fmt := binary32) (by rfl) hs hx hmag
 
+/-- A posteriori one-step fallback bound: even when the exact `fast2Sum` side
+condition does not hold, the Kahan state value changes by at most the sum of
+the corrected-addend rounding error and the compensation rounding error. -/
+theorem kahanStep_fallback_value_error_le {fmt : FloatFormat} {s c x : ℝ} :
+    |kahanValue (kahanStep fmt s c x) - (kahanValue (s, c) + x)| ≤
+      kahanStepFallbackBudget fmt s c x := by
+  let y := roundNNE fmt (x - c)
+  let t := roundNNE fmt (s + y)
+  let c' := roundNNE fmt ((t - s) - y)
+  have hy :
+      |(x - c) - y| ≤ bpow fmt (cexp fmt (x - c)) / 2 := by
+    dsimp [y]
+    simpa [abs_sub_comm] using roundNNE_sub_abs_le fmt (x - c)
+  have hc :
+      |((t - s) - y) - c'| ≤ bpow fmt (cexp fmt ((t - s) - y)) / 2 := by
+    dsimp [c']
+    simpa [abs_sub_comm] using roundNNE_sub_abs_le fmt ((t - s) - y)
+  have hdecomp :
+      kahanValue (kahanStep fmt s c x) - (kahanValue (s, c) + x) =
+        ((y - (x - c)) - (c' - ((t - s) - y))) := by
+    dsimp [kahanStep, kahanValue, y, t, c']
+    ring
+  rw [hdecomp]
+  have htri :
+      |(y - (x - c)) - (c' - ((t - s) - y))|
+        ≤ |y - (x - c)| + |((t - s) - y) - c'| := by
+    simpa [sub_eq_add_neg, abs_neg, abs_sub_comm] using
+      (abs_add_le (y - (x - c)) (-(c' - ((t - s) - y)) : ℝ))
+  have hy' : |y - (x - c)| = |(x - c) - y| := by rw [abs_sub_comm]
+  dsimp [kahanStepFallbackBudget, y, t]
+  rw [hy'] at htri
+  linarith
+
 /-- Global exactness of the Kahan fold under the stepwise exactness side
 condition. The exact accumulated real value is always `s_final - c_final`. -/
 theorem kahanFold_exact {fmt : FloatFormat} (hβ : fmt.β = 2)
@@ -302,5 +432,265 @@ theorem kahanSum_tight_bound_binary32 {xs : List ℝ}
     (hin : KahanInput binary32 xs) :
     |xs.sum - (kahanSum binary32 xs).1| = |(kahanSum binary32 xs).2| :=
   kahanSum_tight_bound (fmt := binary32) (by rfl) hin
+
+/-- General fallback bound for the exact state value tracked by a Kahan fold.
+This bound requires no exactness contract; it only sums the local rounding
+budgets encountered along the computed run. -/
+theorem kahanFold_fallback_value_error_le {fmt : FloatFormat}
+    {sc : ℝ × ℝ} {xs : List ℝ} :
+    |kahanValue (kahanFold fmt sc xs) - (kahanValue sc + xs.sum)| ≤
+      kahanFoldFallbackBudget fmt sc xs := by
+  induction xs generalizing sc with
+  | nil =>
+      simp [kahanFold, kahanFoldFallbackBudget, kahanValue]
+  | cons x xs ih =>
+      let sc' := kahanStep fmt sc.1 sc.2 x
+      have hstep :
+          |kahanValue sc' - (kahanValue sc + x)| ≤
+            kahanStepFallbackBudget fmt sc.1 sc.2 x := by
+        exact kahanStep_fallback_value_error_le (fmt := fmt) (s := sc.1) (c := sc.2) (x := x)
+      have htail :
+          |kahanValue (kahanFold fmt sc' xs) - (kahanValue sc' + xs.sum)| ≤
+            kahanFoldFallbackBudget fmt sc' xs := by
+        exact ih
+      have hsplit :
+          kahanValue (kahanFold fmt sc' xs) - (kahanValue sc + (x :: xs).sum) =
+            (kahanValue (kahanFold fmt sc' xs) - (kahanValue sc' + xs.sum)) +
+            (kahanValue sc' - (kahanValue sc + x)) := by
+        simp [sc', kahanValue]
+        ring
+      have hmain :
+          |kahanValue (kahanFold fmt sc' xs) - (kahanValue sc + (x :: xs).sum)|
+            ≤ |kahanValue (kahanFold fmt sc' xs) - (kahanValue sc' + xs.sum)| +
+              |kahanValue sc' - (kahanValue sc + x)| := by
+        rw [hsplit]
+        exact abs_add_le _ _
+      have := add_le_add htail hstep
+      simpa [kahanFold, kahanFoldFallbackBudget, sc', add_comm, add_left_comm, add_assoc] using
+        le_trans hmain this
+
+/-- User-facing fallback bound for the exact Kahan state value. -/
+theorem kahanSum_fallback_value_error_le {fmt : FloatFormat} {xs : List ℝ} :
+    |kahanValue (kahanSum fmt xs) - xs.sum| ≤ kahanSumFallbackBudget fmt xs := by
+  cases xs with
+  | nil =>
+      simp [kahanSum, kahanSumFallbackBudget, kahanValue]
+  | cons x xs =>
+      simpa [kahanSum, kahanSumFallbackBudget, kahanValue] using
+        (kahanFold_fallback_value_error_le (fmt := fmt) (sc := (x, 0)) (xs := xs))
+
+/-- User-facing fallback bound for the running-sum component returned by
+`kahanSum`. The total forward error is bounded by the a posteriori value-error
+budget plus the magnitude of the final compensation. -/
+theorem kahanSum_fallback_head_error_le {fmt : FloatFormat} {xs : List ℝ} :
+    |xs.sum - (kahanSum fmt xs).1| ≤ kahanSumFallbackBudget fmt xs + |(kahanSum fmt xs).2| := by
+  have hval := kahanSum_fallback_value_error_le (fmt := fmt) (xs := xs)
+  cases hsum : kahanSum fmt xs with
+  | mk s c =>
+      rw [hsum] at hval
+      simp at hval ⊢
+      have hdecomp : xs.sum - s = (xs.sum - (s - c)) - c := by ring
+      rw [hdecomp]
+      have htri : |(xs.sum - (s - c)) - c| ≤ |xs.sum - (s - c)| + |c| := by
+        simpa [sub_eq_add_neg] using abs_add_le (xs.sum - (s - c)) (-c)
+      dsimp [kahanValue] at hval
+      have hval' : |xs.sum - (s - c)| ≤ kahanSumFallbackBudget fmt xs := by
+        simpa [abs_sub_comm] using hval
+      calc
+        |(xs.sum - (s - c)) - c| ≤ |xs.sum - (s - c)| + |c| := htri
+        _ ≤ kahanSumFallbackBudget fmt xs + |c| := by gcongr
+
+/-- Paper-facing fallback corollary: once the a posteriori Kahan fallback
+budget is discharged by a standard `C * eps * sumAbs` estimate, the exact-state
+value error immediately takes that form. -/
+theorem kahanSum_fallback_value_error_le_of_C_eps_sumAbs
+    {fmt : FloatFormat} {xs : List ℝ} {C : ℝ}
+    (hbudget : kahanSumFallbackBudget fmt xs ≤ C * machineEpsilon fmt * sumAbs xs) :
+    |kahanValue (kahanSum fmt xs) - xs.sum| ≤ C * machineEpsilon fmt * sumAbs xs :=
+  le_trans (kahanSum_fallback_value_error_le (fmt := fmt) (xs := xs)) hbudget
+
+/-- Paper-facing fallback corollary for the running-sum component returned by
+`kahanSum`. -/
+theorem kahanSum_fallback_head_error_le_of_C_eps_sumAbs
+    {fmt : FloatFormat} {xs : List ℝ} {C : ℝ}
+    (hbudget : kahanSumFallbackBudget fmt xs ≤ C * machineEpsilon fmt * sumAbs xs) :
+    |xs.sum - (kahanSum fmt xs).1| ≤
+      C * machineEpsilon fmt * sumAbs xs + |(kahanSum fmt xs).2| := by
+  calc
+    |xs.sum - (kahanSum fmt xs).1|
+        ≤ kahanSumFallbackBudget fmt xs + |(kahanSum fmt xs).2| :=
+          kahanSum_fallback_head_error_le (fmt := fmt) (xs := xs)
+    _ ≤ C * machineEpsilon fmt * sumAbs xs + |(kahanSum fmt xs).2| := by
+          gcongr
+
+theorem kahanChain_of_prefixChain {fmt : FloatFormat} {s : ℝ} {xs : List ℝ}
+    (hchain : KahanPrefixChain fmt s xs) :
+    KahanChain fmt (s, 0) xs := by
+  induction xs generalizing s with
+  | nil =>
+      simp [KahanChain]
+  | cons x xs ih =>
+      rcases hchain with ⟨hs, hx, hmag, hsx, htail⟩
+      have hstep : kahanStep fmt s 0 x = (s + x, 0) :=
+        kahanStep_zero_of_repr_sum hs hx hsx
+      refine ⟨hs, zero_isRepresentable fmt, hx, ?_, ?_, ?_⟩
+      · simpa using hx
+      · simpa using hmag
+      · simpa [hstep] using ih htail
+
+theorem kahanInput_of_prefixInput {fmt : FloatFormat} {xs : List ℝ}
+    (hin : KahanPrefixInput fmt xs) :
+    KahanInput fmt xs := by
+  cases xs with
+  | nil =>
+      simp [KahanInput]
+  | cons x xs =>
+      rcases hin with ⟨hx, hchain⟩
+      exact ⟨hx, kahanChain_of_prefixChain hchain⟩
+
+theorem kahanPrefixChain_of_monotoneChain {fmt : FloatFormat}
+    {s prev : ℝ} {xs : List ℝ}
+    (hin : KahanMonotoneChain fmt s prev xs) :
+    KahanPrefixChain fmt s xs := by
+  induction xs generalizing s prev with
+  | nil =>
+      exact hin.1
+  | cons x xs ih =>
+      rcases hin with ⟨hs, hprev0, hprev_le, hx, hx0, hxprev, hsx, htail⟩
+      refine ⟨hs, hx, ?_, hsx, ?_⟩
+      · rw [abs_of_nonneg hx0, abs_of_nonneg (le_trans hprev0 hprev_le)]
+        linarith
+      · exact ih htail
+
+theorem kahanPrefixInput_of_monotoneInput {fmt : FloatFormat} {xs : List ℝ}
+    (hin : KahanMonotoneInput fmt xs) :
+    KahanPrefixInput fmt xs := by
+  cases xs with
+  | nil =>
+      simp [KahanPrefixInput]
+  | cons x xs =>
+      rcases hin with ⟨hx, _, hchain⟩
+      exact ⟨hx, kahanPrefixChain_of_monotoneChain hchain⟩
+
+theorem kahanInput_of_monotoneInput {fmt : FloatFormat} {xs : List ℝ}
+    (hin : KahanMonotoneInput fmt xs) :
+    KahanInput fmt xs :=
+  kahanInput_of_prefixInput (kahanPrefixInput_of_monotoneInput hin)
+
+theorem kahanPrefixChain_sum_repr {fmt : FloatFormat} {s : ℝ} {xs : List ℝ}
+    (hchain : KahanPrefixChain fmt s xs) :
+    isRepresentable fmt (s + xs.sum) := by
+  induction xs generalizing s with
+  | nil =>
+      simpa [KahanPrefixChain] using hchain
+  | cons x xs ih =>
+      rcases hchain with ⟨_, _, _, hsx, htail⟩
+      have hrepr : isRepresentable fmt ((s + x) + xs.sum) := ih htail
+      simpa [List.sum_cons, add_assoc] using hrepr
+
+theorem kahanPrefixInput_sum_repr {fmt : FloatFormat} {xs : List ℝ}
+    (hin : KahanPrefixInput fmt xs) :
+    isRepresentable fmt xs.sum := by
+  cases xs with
+  | nil =>
+      simpa using zero_isRepresentable fmt
+  | cons x xs =>
+      rcases hin with ⟨_, hchain⟩
+      simpa [List.sum_cons] using kahanPrefixChain_sum_repr hchain
+
+theorem kahanMonotoneChain_of_runningSumChain {fmt : FloatFormat}
+    {s prev : ℝ} {xs : List ℝ}
+    (hs : isRepresentable fmt s)
+    (hrun : RunningSumChain fmt s xs)
+    (hmono : Nonincreasing (prev :: xs))
+    (hnonneg : ∀ x ∈ prev :: xs, 0 ≤ x)
+    (hprev_le : prev ≤ s) :
+    KahanMonotoneChain fmt s prev xs := by
+  induction xs generalizing s prev with
+  | nil =>
+      refine ⟨?_, hnonneg prev (by simp), hprev_le⟩
+      simpa [RunningSumChain] using hrun
+  | cons x xs ih =>
+      rcases hrun with ⟨hx, hsx, htail⟩
+      cases xs with
+      | nil =>
+          have hxp : x ≤ prev := by
+            simpa [Nonincreasing] using hmono.1
+          have hprev0 : 0 ≤ prev := hnonneg prev (by simp)
+          have hx0 : 0 ≤ x := hnonneg x (by simp)
+          refine ⟨hs, hprev0, hprev_le, hx, hx0, hxp, hsx, ?_⟩
+          · refine ⟨?_, hx0, by linarith⟩
+            simpa [RunningSumChain] using htail
+      | cons y ys =>
+          have hmono_step : x ≤ prev := by
+            simpa [Nonincreasing] using hmono.1
+          have hmono_tail : Nonincreasing (x :: y :: ys) := by
+            simpa [Nonincreasing] using hmono.2
+          have hnonneg_tail : ∀ z ∈ x :: y :: ys, 0 ≤ z := by
+            intro z hz
+            exact hnonneg z (by simp [hz])
+          have hprev0 : 0 ≤ prev := hnonneg prev (by simp)
+          have hx0 : 0 ≤ x := hnonneg x (by simp)
+          refine ⟨hs, hprev0, hprev_le, hx, hx0, hmono_step, hsx, ?_⟩
+          · exact ih hsx htail hmono_tail hnonneg_tail (by linarith)
+
+theorem kahanMonotoneInput_of_runningSums_of_nonincreasing {fmt : FloatFormat}
+    {xs : List ℝ}
+    (hrun : RunningSumInput fmt xs)
+    (hmono : Nonincreasing xs)
+    (hnonneg : ∀ x ∈ xs, 0 ≤ x) :
+    KahanMonotoneInput fmt xs := by
+  cases xs with
+  | nil =>
+      simp [KahanMonotoneInput]
+  | cons x xs =>
+      rcases hrun with ⟨hx, htail⟩
+      have hx0 : 0 ≤ x := hnonneg x (by simp)
+      refine ⟨hx, hx0, ?_⟩
+      exact kahanMonotoneChain_of_runningSumChain hx htail hmono hnonneg (by linarith)
+
+theorem kahanPrefixInput_of_runningSums_of_nonincreasing {fmt : FloatFormat}
+    {xs : List ℝ}
+    (hrun : RunningSumInput fmt xs)
+    (hmono : Nonincreasing xs)
+    (hnonneg : ∀ x ∈ xs, 0 ≤ x) :
+    KahanPrefixInput fmt xs :=
+  kahanPrefixInput_of_monotoneInput
+    (kahanMonotoneInput_of_runningSums_of_nonincreasing hrun hmono hnonneg)
+
+theorem kahanInput_of_runningSums_of_nonincreasing {fmt : FloatFormat}
+    {xs : List ℝ}
+    (hrun : RunningSumInput fmt xs)
+    (hmono : Nonincreasing xs)
+    (hnonneg : ∀ x ∈ xs, 0 ≤ x) :
+    KahanInput fmt xs :=
+  kahanInput_of_prefixInput
+    (kahanPrefixInput_of_runningSums_of_nonincreasing hrun hmono hnonneg)
+
+theorem kahanFold_zero_eq_sum_zero_of_prefixChain {fmt : FloatFormat} {s : ℝ} {xs : List ℝ}
+    (hchain : KahanPrefixChain fmt s xs) :
+    kahanFold fmt (s, 0) xs = (s + xs.sum, 0) := by
+  induction xs generalizing s with
+  | nil =>
+      simp [kahanFold]
+  | cons x xs ih =>
+      rcases hchain with ⟨hs, hx, _, hsx, htail⟩
+      have hstep : kahanStep fmt s 0 x = (s + x, 0) :=
+        kahanStep_zero_of_repr_sum hs hx hsx
+      calc
+        kahanFold fmt (s, 0) (x :: xs)
+            = kahanFold fmt (s + x, 0) xs := by simp [kahanFold, hstep]
+        _ = ((s + x) + xs.sum, 0) := ih htail
+        _ = (s + (x :: xs).sum, 0) := by simp [List.sum_cons, add_assoc]
+
+theorem kahanSum_eq_sum_zero_of_prefixInput {fmt : FloatFormat} {xs : List ℝ}
+    (hin : KahanPrefixInput fmt xs) :
+    kahanSum fmt xs = (xs.sum, 0) := by
+  cases xs with
+  | nil =>
+      simp [kahanSum]
+  | cons x xs =>
+      rcases hin with ⟨_, hchain⟩
+      simpa [kahanSum, List.sum_cons] using kahanFold_zero_eq_sum_zero_of_prefixChain hchain
 
 end Flean

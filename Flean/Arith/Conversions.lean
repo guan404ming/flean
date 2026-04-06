@@ -1,4 +1,5 @@
-import Flean.Binary.Defs
+import Flean.Binary.Properties
+import Flean.Arith.Spec
 import Flean.Arith.Operations
 import Flean.Arith.RoundingHelper
 
@@ -11,33 +12,29 @@ Crucial for ML compiler mixed-precision analysis.
 
 namespace Flean
 
+private def castNaNValue {srcSpec dstSpec : BinarySpec} (f : FloatBits srcSpec) : FloatBits dstSpec :=
+  let quietMask := BitVec.ofNat dstSpec.sigWidth (1 <<< (dstSpec.sigWidth - 1))
+  let payload := BitVec.ofNat dstSpec.sigWidth f.sigField.toNat
+  FloatBits.fromFields f.signBit (BitVec.allOnes dstSpec.expWidth) (payload ||| quietMask)
+
 /-- Generic cast between two different BinarySpecs.
     This is the core operation for mixed-precision ML compilers. -/
-def FloatBits.cast {srcSpec dstSpec : BinarySpec} (f : FloatBits srcSpec) (mode : RoundingMode) :
+noncomputable def FloatBits.cast {srcSpec dstSpec : BinarySpec}
+    (f : FloatBits srcSpec) (mode : RoundingMode) :
     OpResult (FloatBits dstSpec) :=
   match f.classify with
-  | .nan => { value := FloatBits.quietNaN dstSpec }
+  | .nan =>
+    { value := castNaNValue f,
+      flags := { invalidOperation := f.isSignalingNaN } }
   | .infinite => { value := if f.isNeg then FloatBits.negInf dstSpec else FloatBits.posInf dstSpec }
-  | .zero => { value := if f.isNeg then FloatBits.negZero dstSpec else FloatBits.posZero dstSpec }
-  | .normal | .subnormal =>
-    let (m, e) := f.getExtendedSignificand
-    let srcBias := srcSpec.bias
-    let dstBias := dstSpec.bias
-    let srcP := srcSpec.sigWidth
-    let dstP := dstSpec.sigWidth
-    
-    -- Real exponent: e - srcBias
-    -- Target biased exponent: (e - srcBias) + dstBias
-    let rawExp : Int := (e : Int) - (srcBias : Int) + (dstBias : Int)
-    
-    -- Align significand: shift from srcP to dstP
-    if dstP ≥ srcP then
-      -- Widening (e.g., f16 -> f32): no precision loss
-      let scaledSig := m.toNat <<< (dstP - srcP)
-      roundAndPack mode f.isNeg rawExp scaledSig
-    else
-      -- Narrowing (e.g., f32 -> f16): potential precision loss/rounding
-      let _shift := srcP - dstP
-      roundAndPack mode f.isNeg rawExp m.toNat
+  | .zero | .normal | .subnormal =>
+    let exact := f.toReal
+    let rounded := castSpec srcSpec.toFormat dstSpec.toFormat mode exact
+    let flags := {
+      inexact := inexactFlag exact rounded
+      overflow := overflowFlag dstSpec.toFormat exact
+      underflow := underflowFlag dstSpec.toFormat exact rounded
+    }
+    { value := FloatBits.ofRealOrInfSigned dstSpec rounded f.isNeg, flags := flags }
 
 end Flean

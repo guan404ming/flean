@@ -10,6 +10,8 @@ Custom Lean 4 tactics for ML compiler mixed-precision analysis.
 
 ## Tactics
 
+- `flean_cast_auto`: Proof-producing cast-chain automation for goals
+  that reduce to decidable format-refinement checks.
 - `flean_cast_safe`: Prove that a cast chain preserves values exactly
   (widen-narrow idempotence, widening exactness, etc.)
 - `flean_cast_bound`: Derive error bounds for cast chains by composing
@@ -28,6 +30,82 @@ Each tactic works by:
 namespace Flean
 
 open Lean Meta Elab Tactic
+
+/-! ## Proof-producing refinement checker -/
+
+/-- Boolean checker for format refinement, used by proof-producing automation. -/
+def refinesBool (fmt1 fmt2 : FloatFormat) : Bool :=
+  decide (fmt1.β = fmt2.β ∧ fmt1.prec ≤ fmt2.prec ∧ fmt2.emin ≤ fmt1.emin)
+
+/-- Soundness+completeness of the refinement checker. -/
+theorem refinesBool_true_iff (fmt1 fmt2 : FloatFormat) :
+    refinesBool fmt1 fmt2 = true ↔ FormatRefines fmt1 fmt2 := by
+  unfold refinesBool
+  constructor
+  · intro h
+    have h' : fmt1.β = fmt2.β ∧ fmt1.prec ≤ fmt2.prec ∧ fmt2.emin ≤ fmt1.emin :=
+      decide_eq_true_eq.mp h
+    exact ⟨h'.1, h'.2.1, h'.2.2⟩
+  · intro href
+    exact decide_eq_true_eq.mpr ⟨href.radix_eq, href.prec_le, href.emin_le⟩
+
+theorem refines_of_refinesBool_true {fmt1 fmt2 : FloatFormat}
+    (h : refinesBool fmt1 fmt2 = true) : FormatRefines fmt1 fmt2 :=
+  (refinesBool_true_iff fmt1 fmt2).1 h
+
+theorem refinesBool_true_of_refines {fmt1 fmt2 : FloatFormat}
+    (h : FormatRefines fmt1 fmt2) : refinesBool fmt1 fmt2 = true :=
+  (refinesBool_true_iff fmt1 fmt2).2 h
+
+/-- Proof-producing widen-narrow automation driven by `refinesBool`. -/
+theorem widen_narrow_id_auto {fmt1 fmt2 : FloatFormat} {x : ℝ}
+    (hx : isRepresentable fmt1 x) (h : refinesBool fmt1 fmt2 = true) :
+    roundNNE fmt1 (roundNNE fmt2 x) = x :=
+  widen_narrow_id (refines_of_refinesBool_true h) hx
+
+/-- Proof-producing widening exactness automation driven by `refinesBool`. -/
+theorem cast_widen_exact_auto {fmt1 fmt2 : FloatFormat} {x : ℝ}
+    (hx : isRepresentable fmt1 x) (h : refinesBool fmt1 fmt2 = true) :
+    roundNNE fmt2 x = x :=
+  cast_widen_exact (refines_of_refinesBool_true h) hx
+
+/-- Proof-producing narrow-widen automation driven by `refinesBool`. -/
+theorem narrow_widen_id_auto {fmt1 fmt2 : FloatFormat} (x : ℝ)
+    (h : refinesBool fmt1 fmt2 = true) :
+    roundNNE fmt2 (roundNNE fmt1 x) = roundNNE fmt1 x :=
+  narrow_widen_id (refines_of_refinesBool_true h) x
+
+/-- Proof-producing narrow-widen-narrow automation driven by `refinesBool`. -/
+theorem narrow_absorb_widen_auto {fmt1 fmt2 : FloatFormat} (x : ℝ)
+    (h : refinesBool fmt1 fmt2 = true) :
+    roundNNE fmt1 (roundNNE fmt2 (roundNNE fmt1 x)) = roundNNE fmt1 x :=
+  narrow_absorb_widen (refines_of_refinesBool_true h) x
+
+/-- `flean_cast_auto` is a proof-producing automation tactic for cast-chain exactness.
+    It proves goals by reducing format side conditions to `refinesBool = true`,
+    then solving them with `decide`. -/
+syntax (name := fleanCastAuto) "flean_cast_auto" : tactic
+
+@[tactic fleanCastAuto]
+def evalFleanCastAuto : Tactic := fun _ => do
+  let tactics ← `(tactic|
+    first
+    -- Widen-narrow: roundNNE fmt1 (roundNNE fmt2 x) = x
+    | (apply widen_narrow_id_auto <;> (first | assumption | decide))
+    -- Widening exactness: roundNNE fmt2 x = x
+    | (apply cast_widen_exact_auto <;> (first | assumption | decide))
+    -- Narrow then widen = narrow
+    | (apply narrow_widen_id_auto <;> (first | assumption | decide))
+    -- Narrow-widen-narrow absorption
+    | (apply narrow_absorb_widen_auto <;> (first | assumption | decide))
+    -- Idempotence
+    | exact roundNNE_idempotent _ _
+    -- Same-format n-fold collapse
+    | exact cast_chain_same_format _ _ _
+    -- Repr fixed point
+    | exact roundNNE_repr_fixed _ ‹_›
+  )
+  evalTactic tactics
 
 /-! ## flean_cast_safe: prove cast chains are exact -/
 
@@ -62,6 +140,8 @@ def evalFleanCastSafe : Tactic := fun _ => do
     | (apply narrow_widen_id; constructor <;> (first | rfl | decide))
     -- Repr fixed point
     | exact roundNNE_repr_fixed _ ‹_›
+    -- Proof-producing automation over decidable refinement checks
+    | flean_cast_auto
     -- Fallback: try simp with cast chain lemmas
     | (simp only [roundNNE_idempotent, narrow_widen_id, cast_widen_exact, widen_narrow_id])
   )
@@ -138,6 +218,9 @@ def evalFleanQuantBound : Tactic := fun _ => do
 theorem machineEpsilon_binary16 : machineEpsilon binary16 = (2 : ℝ) ^ (-10 : ℤ) := by
   unfold machineEpsilon binary16; norm_num
 
+theorem machineEpsilon_bfloat16 : machineEpsilon bfloat16 = (2 : ℝ) ^ (-7 : ℤ) := by
+  unfold machineEpsilon bfloat16; norm_num
+
 theorem machineEpsilon_binary32 : machineEpsilon binary32 = (2 : ℝ) ^ (-23 : ℤ) := by
   unfold machineEpsilon binary32; norm_num
 
@@ -155,6 +238,11 @@ example (x : ℝ) :
 example {x : ℝ} (hx : isRepresentable binary16 x) :
     roundNNE binary16 (roundNNE binary32 x) = x := by
   exact widen_narrow_id binary16_refines_binary32 hx
+
+-- Demo 2b: proof-producing automation on bf16/f32
+example {x : ℝ} (hx : isRepresentable bfloat16 x) :
+    roundNNE bfloat16 (roundNNE binary32 x) = x := by
+  flean_cast_auto
 
 -- Demo 3: widening exactness
 example {x : ℝ} (hx : isRepresentable binary32 x) :

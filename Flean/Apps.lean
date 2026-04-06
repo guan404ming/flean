@@ -5,4 +5,6 @@ import Flean.Apps.Compensated.Kahan
 import Flean.Apps.Compensated.ChunkedKahan
 import Flean.Apps.Compensated.Neumaier
 import Flean.Apps.ML.DotProd
+import Flean.Apps.ML.DotProdBits
 import Flean.Apps.ML.StableLogSumExp
+import Flean.Apps.ML.Softmax

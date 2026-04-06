@@ -34,6 +34,16 @@ def binary16 : FloatFormat where
   hprec := by omega
   hexp := by omega
 
+/-- bfloat16 (brain floating point): 1 sign + 8 exponent + 7 significand bits. -/
+def bfloat16 : FloatFormat where
+  β := 2
+  prec := 8
+  emin := -126
+  emax := 127
+  hβ := by omega
+  hprec := by omega
+  hexp := by omega
+
 /-- IEEE 754 binary32 (single precision): 1 sign + 8 exponent + 23 significand bits. -/
 def binary32 : FloatFormat where
   β := 2

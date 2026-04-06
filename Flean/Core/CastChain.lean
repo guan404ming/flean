@@ -151,12 +151,23 @@ theorem binary16_refines_binary32 : FormatRefines binary16 binary32 where
   prec_le := by decide
   emin_le := by decide
 
+/-- bfloat16 refines to binary32. -/
+theorem bfloat16_refines_binary32 : FormatRefines bfloat16 binary32 where
+  radix_eq := rfl
+  prec_le := by decide
+  emin_le := by decide
+
 theorem binary32_refines_binary64 : FormatRefines binary32 binary64 where
   radix_eq := rfl
   prec_le := by decide
   emin_le := by decide
 
 theorem binary16_refines_binary64 : FormatRefines binary16 binary64 where
+  radix_eq := rfl
+  prec_le := by decide
+  emin_le := by decide
+
+theorem bfloat16_refines_binary64 : FormatRefines bfloat16 binary64 where
   radix_eq := rfl
   prec_le := by decide
   emin_le := by decide
@@ -175,6 +186,11 @@ theorem f16_widen_narrow_f32 {x : ℝ} (hx : isRepresentable binary16 x) :
 theorem f32_widen_narrow_f64 {x : ℝ} (hx : isRepresentable binary32 x) :
     roundNNE binary32 (roundNNE binary64 x) = x :=
   widen_narrow_id binary32_refines_binary64 hx
+
+/-- f32 → bf16 → f32 round-trip is identity for bf16-representable values. -/
+theorem bf16_widen_narrow_f32 {x : ℝ} (hx : isRepresentable bfloat16 x) :
+    roundNNE bfloat16 (roundNNE binary32 x) = x :=
+  widen_narrow_id bfloat16_refines_binary32 hx
 
 /-! ## ML cast patterns -/
 

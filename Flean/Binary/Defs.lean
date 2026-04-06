@@ -167,37 +167,76 @@ noncomputable def FloatBits.toReal {spec : BinarySpec} (f : FloatBits spec) : �
       let p := (spec.sigWidth : Int)
       (s : ℝ) * (m : ℝ) * (2 : ℝ) ^ (e - p)
 
+/-- A simple IEEE-style denotation that preserves NaN class, infinities, and the sign of zero. -/
+inductive IEEEValue where
+  | nan (sign : Sign) (signaling : Bool) (payload : Nat)
+  | infinite (sign : Sign)
+  | finite (x : ℝ) (zeroSign : Option Sign := none)
+
+/-- Raw NaN payload bits. Returns `0` for non-NaN values. -/
+def FloatBits.nanPayload {spec : BinarySpec} (f : FloatBits spec) : BitVec spec.sigWidth :=
+  f.sigField
+
+/-- The quiet/signaling discriminator bit within a NaN payload. -/
+def FloatBits.nanQuietBit {spec : BinarySpec} (f : FloatBits spec) : Bool :=
+  if spec.sigWidth = 0 then
+    false
+  else
+    f.sigField.getLsbD (spec.sigWidth - 1)
+
+/-- Predicate for quiet NaNs. -/
+def FloatBits.isQuietNaN {spec : BinarySpec} (f : FloatBits spec) : Bool :=
+  f.classify == .nan && f.nanQuietBit
+
+/-- Predicate for signaling NaNs. -/
+def FloatBits.isSignalingNaN {spec : BinarySpec} (f : FloatBits spec) : Bool :=
+  f.classify == .nan && !f.nanQuietBit
+
+/-- Canonicalize a NaN into its quiet form while preserving sign and payload bits. -/
+def FloatBits.quietedNaN {spec : BinarySpec} (f : FloatBits spec) : FloatBits spec :=
+  let quietMask := BitVec.ofNat spec.sigWidth (1 <<< (spec.sigWidth - 1))
+  FloatBits.fromFields f.signBit (BitVec.allOnes spec.expWidth) (f.sigField ||| quietMask)
+
+/-- Full IEEE-style denotation for a packed floating-point value. -/
+noncomputable def FloatBits.toIEEEValue {spec : BinarySpec} (f : FloatBits spec) : IEEEValue :=
+  match f.classify with
+  | .nan => .nan f.sign f.isSignalingNaN f.nanPayload.toNat
+  | .infinite => .infinite f.sign
+  | .zero => .finite 0 (some f.sign)
+  | .normal | .subnormal => .finite f.toReal
+
 /-! ## Special value constructors -/
 
 /-- Positive zero: sign=0, exp=0, sig=0. -/
 def FloatBits.posZero (spec : BinarySpec) : FloatBits spec :=
-  ⟨0⟩
+  FloatBits.fromFields 0 0 0
 
 /-- Negative zero: sign=1, exp=0, sig=0. -/
 def FloatBits.negZero (spec : BinarySpec) : FloatBits spec :=
-  ⟨BitVec.ofNat spec.totalWidth (1 <<< (spec.expWidth + spec.sigWidth))⟩
+  FloatBits.fromFields (BitVec.ofNat 1 1) 0 0
 
 /-- Positive infinity: sign=0, exp=all ones, sig=0. -/
 def FloatBits.posInf (spec : BinarySpec) : FloatBits spec :=
-  let expAllOnes := (2 ^ spec.expWidth - 1) <<< spec.sigWidth
-  ⟨BitVec.ofNat spec.totalWidth expAllOnes⟩
+  FloatBits.fromFields 0 (BitVec.allOnes spec.expWidth) 0
 
 /-- Negative infinity: sign=1, exp=all ones, sig=0. -/
 def FloatBits.negInf (spec : BinarySpec) : FloatBits spec :=
-  let signBit := 1 <<< (spec.expWidth + spec.sigWidth)
-  let expAllOnes := (2 ^ spec.expWidth - 1) <<< spec.sigWidth
-  ⟨BitVec.ofNat spec.totalWidth (signBit ||| expAllOnes)⟩
+  FloatBits.fromFields (BitVec.ofNat 1 1) (BitVec.allOnes spec.expWidth) 0
 
 /-- Canonical quiet NaN: sign=0, exp=all ones, sig MSB=1, rest=0. -/
 def FloatBits.quietNaN (spec : BinarySpec) : FloatBits spec :=
-  let expAllOnes := (2 ^ spec.expWidth - 1) <<< spec.sigWidth
-  let qBit := 1 <<< (spec.sigWidth - 1)
-  ⟨BitVec.ofNat spec.totalWidth (expAllOnes ||| qBit)⟩
+  let qBit := BitVec.ofNat spec.sigWidth (1 <<< (spec.sigWidth - 1))
+  FloatBits.fromFields 0 (BitVec.allOnes spec.expWidth) qBit
+
+/-- Canonical signaling NaN: sign=0, exp=all ones, payload non-zero with quiet bit cleared. -/
+def FloatBits.signalingNaN (spec : BinarySpec) : FloatBits spec :=
+  let payload := BitVec.ofNat spec.sigWidth 1
+  FloatBits.fromFields 0 (BitVec.allOnes spec.expWidth) payload
 
 /-- Maximum finite positive value: sign=0, exp=max-1, sig=all ones. -/
 def FloatBits.maxFinite (spec : BinarySpec) : FloatBits spec :=
-  let expMaxMinus1 := (2 ^ spec.expWidth - 2) <<< spec.sigWidth
-  let sigAllOnes := 2 ^ spec.sigWidth - 1
-  ⟨BitVec.ofNat spec.totalWidth (expMaxMinus1 ||| sigAllOnes)⟩
+  let expMaxMinus1 := BitVec.ofNat spec.expWidth (2 ^ spec.expWidth - 2)
+  let sigAllOnes := BitVec.allOnes spec.sigWidth
+  FloatBits.fromFields 0 expMaxMinus1 sigAllOnes
 
 end Flean

@@ -11,7 +11,7 @@ to the coarser format.
 ## Directed modes (roundDN, roundUP, roundTZ)
 Only require that fmt2 refines fmt1. Proof uses monotonicity and idempotence.
 
-## Round-to-nearest-even (roundNNE)
+## Round-to-nearest modes (roundNNE, roundNNA)
 Proved for two cases:
 1. Same canonical exponent (subnormal range with equal emin).
 2. Input already representable in fmt1.
@@ -219,6 +219,28 @@ theorem double_roundNNE_of_repr {fmt1 fmt2 : FloatFormat} (href : FormatRefines 
   have : roundNNE fmt2 x = x := roundNNE_repr_fixed fmt2 (isRepresentable_of_refines href hx)
   rw [this, roundNNE_repr_fixed fmt1 hx]
 
+/-! ## Double rounding for roundNNA -/
+
+/-- When both formats share the same cexp, roundNNA coincides. -/
+theorem roundNNA_eq_of_same_cexp {fmt1 fmt2 : FloatFormat} (hβ : fmt1.β = fmt2.β)
+    {x : ℝ} (hcexp : cexp fmt1 x = cexp fmt2 x) :
+    roundNNA fmt1 x = roundNNA fmt2 x := by
+  unfold roundNNA bpow; dsimp only; rw [hcexp, hβ]
+
+/-- Double rounding for roundNNA when cexp fmt1 x = cexp fmt2 x. -/
+theorem double_roundNNA_same_cexp {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+    {x : ℝ} (hcexp : cexp fmt1 x = cexp fmt2 x) :
+    roundNNA fmt1 (roundNNA fmt2 x) = roundNNA fmt1 x := by
+  rw [← roundNNA_eq_of_same_cexp href.radix_eq hcexp]
+  exact roundNNA_idempotent fmt1 x
+
+/-- Double rounding for roundNNA when x is representable in fmt1. -/
+theorem double_roundNNA_of_repr {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fmt2)
+    {x : ℝ} (hx : isRepresentable fmt1 x) :
+    roundNNA fmt1 (roundNNA fmt2 x) = roundNNA fmt1 x := by
+  have : roundNNA fmt2 x = x := roundNNA_repr_fixed fmt2 (isRepresentable_of_refines href hx)
+  rw [this, roundNNA_repr_fixed fmt1 hx]
+
 /-! ## Auxiliary lemmas for representable numbers -/
 
 /-- Any representable z ≤ x satisfies z ≤ roundDN x. -/
@@ -267,5 +289,19 @@ theorem double_roundGeneric_NNE_of_repr {fmt1 fmt2 : FloatFormat}
     roundGeneric zrndNNE.toZrndFn fmt1 (roundGeneric zrndNNE.toZrndFn fmt2 x) =
     roundGeneric zrndNNE.toZrndFn fmt1 x := by
   simp only [← roundNNE_eq_generic]; exact double_roundNNE_of_repr href hx
+
+theorem double_roundGeneric_NNA_same_cexp {fmt1 fmt2 : FloatFormat}
+    (href : FormatRefines fmt1 fmt2) {x : ℝ}
+    (hcexp : cexp fmt1 x = cexp fmt2 x) :
+    roundGeneric zrndNNA.toZrndFn fmt1 (roundGeneric zrndNNA.toZrndFn fmt2 x) =
+    roundGeneric zrndNNA.toZrndFn fmt1 x := by
+  simp only [← roundNNA_eq_generic]; exact double_roundNNA_same_cexp href hcexp
+
+theorem double_roundGeneric_NNA_of_repr {fmt1 fmt2 : FloatFormat}
+    (href : FormatRefines fmt1 fmt2) {x : ℝ}
+    (hx : isRepresentable fmt1 x) :
+    roundGeneric zrndNNA.toZrndFn fmt1 (roundGeneric zrndNNA.toZrndFn fmt2 x) =
+    roundGeneric zrndNNA.toZrndFn fmt1 x := by
+  simp only [← roundNNA_eq_generic]; exact double_roundNNA_of_repr href hx
 
 end Flean

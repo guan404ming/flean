@@ -1,4 +1,4 @@
-import Flean.Binary.Defs
+import Flean.Binary.Properties
 
 /-!
 # Flean.Arith.Predicates
@@ -67,21 +67,8 @@ def FloatBits.totalOrderMag {spec : BinarySpec} (f1 f2 : FloatBits spec) : Bool 
 
 theorem FloatBits.classify_posInf (spec : BinarySpec) :
     (FloatBits.posInf spec).classify = .infinite := by
-  unfold classify posInf isExpMax isExpZero sigField expField
-  have h_exp : BitVec.extractLsb' spec.sigWidth spec.expWidth
-      (BitVec.ofNat spec.totalWidth ((2 ^ spec.expWidth - 1) <<< spec.sigWidth))
-      = BitVec.allOnes spec.expWidth := by
-    ext i
-    simp [BitVec.getLsbD_ofNat, Nat.testBit_shiftLeft,
-      Nat.testBit_two_pow_sub_one, BinarySpec.totalWidth]
-    omega
-  have h_sig : BitVec.extractLsb' 0 spec.sigWidth
-      (BitVec.ofNat spec.totalWidth ((2 ^ spec.expWidth - 1) <<< spec.sigWidth))
-      = 0 := by
-    ext i
-    simp [BitVec.getLsbD_ofNat, Nat.testBit_shiftLeft, BinarySpec.totalWidth]
-    omega
-  simp [h_exp, h_sig]
+  simpa [FloatBits.posInf] using
+    (FloatBits.fromFields_classify_infinite (spec := spec) (s := (0 : BitVec 1)))
 
 theorem FloatBits.isInfinite_posInf (spec : BinarySpec) :
     (FloatBits.posInf spec).isInfinite = true := by
