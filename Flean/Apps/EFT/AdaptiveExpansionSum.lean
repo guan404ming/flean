@@ -163,12 +163,12 @@ theorem adaptiveDistillList_all_repr {fmt : FloatFormat} {xs : List ℝ}
       simp [adaptiveDistillList]
       exact ⟨adaptiveDistill_head_repr hx hxs, adaptiveDistill_residuals_repr hx hxs⟩
 
-theorem adaptiveDistillList_exact_binary64 {xs : List ℝ}
+abbrev adaptiveDistillList_exact_binary64 {xs : List ℝ}
     (hin : AdaptiveExpansionInput binary64 xs) :
     expansionValue (adaptiveDistillList binary64 xs) = xs.sum :=
   adaptiveDistillList_exact (fmt := binary64) (by rfl) hin
 
-theorem adaptiveDistillList_exact_binary32 {xs : List ℝ}
+abbrev adaptiveDistillList_exact_binary32 {xs : List ℝ}
     (hin : AdaptiveExpansionInput binary32 xs) :
     expansionValue (adaptiveDistillList binary32 xs) = xs.sum :=
   adaptiveDistillList_exact (fmt := binary32) (by rfl) hin

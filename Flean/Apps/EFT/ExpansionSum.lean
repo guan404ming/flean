@@ -167,12 +167,12 @@ theorem distillList_all_repr {fmt : FloatFormat} {xs : List ℝ}
 
 /-! ## Concrete binary64 corollaries -/
 
-theorem distillList_exact_binary64 {xs : List ℝ}
+abbrev distillList_exact_binary64 {xs : List ℝ}
     (hin : ExpansionInput binary64 xs) :
     expansionValue (distillList binary64 xs) = xs.sum :=
   distillList_exact (fmt := binary64) (by rfl) hin
 
-theorem distillList_exact_binary32 {xs : List ℝ}
+abbrev distillList_exact_binary32 {xs : List ℝ}
     (hin : ExpansionInput binary32 xs) :
     expansionValue (distillList binary32 xs) = xs.sum :=
   distillList_exact (fmt := binary32) (by rfl) hin

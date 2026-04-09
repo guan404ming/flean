@@ -32,80 +32,30 @@ theorem mulBitFlagEquiv_zero_right (spec : BinarySpec) (mode : RoundingMode)
     (ha : a.classify = .normal ∨ a.classify = .subnormal ∨ a.classify = .zero)
     (hb : b.classify = .zero) :
     (a.mul b mode).flags = mulFlagsSpec spec.toFormat mode a.toReal b.toReal := by
-  rcases ha with ha | ha | ha
-  · have hb0 : b.toReal = 0 := by
-      unfold FloatBits.toReal
-      rw [hb]
-    have himpl : (a.mul b mode).flags = {} := by
-      unfold FloatBits.mul
-      simp [FloatBits.mulSpecial, ha, hb]
-    have hspec : mulFlagsSpec spec.toFormat mode a.toReal b.toReal = {} := by
-      rw [mulFlagsSpec_correct, roundedFlagsSpec_correct]
-      simp [hb0, mulSpec, round_zero, inexactFlag, underflowFlag, overflowFlag_zero_false]
-    simpa [hspec] using himpl
-  · have hb0 : b.toReal = 0 := by
-      unfold FloatBits.toReal
-      rw [hb]
-    have himpl : (a.mul b mode).flags = {} := by
-      unfold FloatBits.mul
-      simp [FloatBits.mulSpecial, ha, hb]
-    have hspec : mulFlagsSpec spec.toFormat mode a.toReal b.toReal = {} := by
-      rw [mulFlagsSpec_correct, roundedFlagsSpec_correct]
-      simp [hb0, mulSpec, round_zero, inexactFlag, underflowFlag, overflowFlag_zero_false]
-    simpa [hspec] using himpl
-  · have hb0 : b.toReal = 0 := by
-      unfold FloatBits.toReal
-      rw [hb]
-    have ha0 : a.toReal = 0 := by
-      unfold FloatBits.toReal
-      rw [ha]
-    have himpl : (a.mul b mode).flags = {} := by
-      unfold FloatBits.mul
-      simp [FloatBits.mulSpecial, ha, hb]
-    have hspec : mulFlagsSpec spec.toFormat mode a.toReal b.toReal = {} := by
-      rw [mulFlagsSpec_correct, roundedFlagsSpec_correct]
-      simp [ha0, hb0, mulSpec, round_zero, inexactFlag, underflowFlag, overflowFlag_zero_false]
-    simpa [hspec] using himpl
+  have hb0 : b.toReal = 0 := by
+    unfold FloatBits.toReal
+    rw [hb]
+  have himpl : (a.mul b mode).flags = {} := by
+    rcases ha with ha | ha | ha <;> unfold FloatBits.mul <;> simp [FloatBits.mulSpecial, ha, hb]
+  have hspec : mulFlagsSpec spec.toFormat mode a.toReal b.toReal = {} := by
+    rw [mulFlagsSpec_correct, roundedFlagsSpec_correct]
+    simp [hb0, mulSpec, round_zero, inexactFlag, underflowFlag, overflowFlag_zero_false]
+  simpa [hspec] using himpl
 
 theorem mulBitFlagEquiv_zero_left (spec : BinarySpec) (mode : RoundingMode)
     (a b : FloatBits spec)
     (ha : a.classify = .zero)
     (hb : b.classify = .normal ∨ b.classify = .subnormal ∨ b.classify = .zero) :
     (a.mul b mode).flags = mulFlagsSpec spec.toFormat mode a.toReal b.toReal := by
-  rcases hb with hb | hb | hb
-  · have ha0 : a.toReal = 0 := by
-      unfold FloatBits.toReal
-      rw [ha]
-    have himpl : (a.mul b mode).flags = {} := by
-      unfold FloatBits.mul
-      simp [FloatBits.mulSpecial, ha, hb]
-    have hspec : mulFlagsSpec spec.toFormat mode a.toReal b.toReal = {} := by
-      rw [mulFlagsSpec_correct, roundedFlagsSpec_correct]
-      simp [ha0, mulSpec, round_zero, inexactFlag, underflowFlag, overflowFlag_zero_false]
-    simpa [hspec] using himpl
-  · have ha0 : a.toReal = 0 := by
-      unfold FloatBits.toReal
-      rw [ha]
-    have himpl : (a.mul b mode).flags = {} := by
-      unfold FloatBits.mul
-      simp [FloatBits.mulSpecial, ha, hb]
-    have hspec : mulFlagsSpec spec.toFormat mode a.toReal b.toReal = {} := by
-      rw [mulFlagsSpec_correct, roundedFlagsSpec_correct]
-      simp [ha0, mulSpec, round_zero, inexactFlag, underflowFlag, overflowFlag_zero_false]
-    simpa [hspec] using himpl
-  · have ha0 : a.toReal = 0 := by
-      unfold FloatBits.toReal
-      rw [ha]
-    have hb0 : b.toReal = 0 := by
-      unfold FloatBits.toReal
-      rw [hb]
-    have himpl : (a.mul b mode).flags = {} := by
-      unfold FloatBits.mul
-      simp [FloatBits.mulSpecial, ha, hb]
-    have hspec : mulFlagsSpec spec.toFormat mode a.toReal b.toReal = {} := by
-      rw [mulFlagsSpec_correct, roundedFlagsSpec_correct]
-      simp [ha0, hb0, mulSpec, round_zero, inexactFlag, underflowFlag, overflowFlag_zero_false]
-    simpa [hspec] using himpl
+  have ha0 : a.toReal = 0 := by
+    unfold FloatBits.toReal
+    rw [ha]
+  have himpl : (a.mul b mode).flags = {} := by
+    rcases hb with hb | hb | hb <;> unfold FloatBits.mul <;> simp [FloatBits.mulSpecial, ha, hb]
+  have hspec : mulFlagsSpec spec.toFormat mode a.toReal b.toReal = {} := by
+    rw [mulFlagsSpec_correct, roundedFlagsSpec_correct]
+    simp [ha0, mulSpec, round_zero, inexactFlag, underflowFlag, overflowFlag_zero_false]
+  simpa [hspec] using himpl
 
 theorem mulBitFlagEquiv_full (spec : BinarySpec) (mode : RoundingMode) :
     ∀ (a b : FloatBits spec),

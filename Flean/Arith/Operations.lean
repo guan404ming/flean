@@ -101,40 +101,71 @@ def FloatBits.divSpecial {spec : BinarySpec}
   | _, _ => none
 
 /-- Perform finite floating-point addition (same sign). -/
-def FloatBits.addFiniteSameSign {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
+noncomputable def FloatBits.addFiniteSameSign {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
     OpResult (FloatBits spec) :=
   let (m1, e1) := f1.getExtendedSignificand
   let (m2, e2) := f2.getExtendedSignificand
-  let _p := spec.sigWidth
   let diff := e1 - e2
-  let m1_ext := m1.toNat <<< 2
-  let m2_ext := m2.toNat <<< 2
-  let m2_aligned := m2_ext / 2^diff
-  let sticky := if m2_ext % 2^diff != 0 then 1 else 0
-  let sum := m1_ext + m2_aligned + sticky
+  let m1Ext := m1.toNat <<< 2
+  let m2Ext := m2.toNat <<< 2
+  let m2Aligned := m2Ext / 2 ^ diff
+  let sticky := if m2Ext % 2 ^ diff != 0 then 1 else 0
+  let sum := m1Ext + m2Aligned + sticky
   roundAndPack mode f1.isNeg (e1 : Int) (sum / 4)
 
 /-- Perform finite floating-point addition (opposite sign). -/
-def FloatBits.addFiniteOppositeSign {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
+noncomputable def FloatBits.addFiniteOppositeSign {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
     OpResult (FloatBits spec) :=
   let (m1, e1) := f1.getExtendedSignificand
   let (m2, e2) := f2.getExtendedSignificand
   let p := spec.sigWidth
   let diff := e1 - e2
-  let m1_ext := m1.toNat <<< 2
-  let m2_ext := m2.toNat <<< 2
-  let m2_aligned := m2_ext / 2^diff
-  let sticky := if m2_ext % 2^diff != 0 then 1 else 0
-  if m1_ext + sticky ≥ m2_aligned then
-    let diff_val := (m1_ext + sticky) - m2_aligned
-    if diff_val == 0 then { value := FloatBits.posZero spec }
+  let m1Ext := m1.toNat <<< 2
+  let m2Ext := m2.toNat <<< 2
+  let m2Aligned := m2Ext / 2 ^ diff
+  let sticky := if m2Ext % 2 ^ diff != 0 then 1 else 0
+  if m1Ext + sticky ≥ m2Aligned then
+    let diffVal := (m1Ext + sticky) - m2Aligned
+    if diffVal == 0 then
+      let z := if mode = .roundTowardNegative then FloatBits.negZero spec else FloatBits.posZero spec
+      { value := z }
     else
-      let hbit := Nat.log2 diff_val
-      let shift_needed := (p + 2) - hbit
-      let rawExp := (e1 : Int) - shift_needed
-      let scaledSig := diff_val <<< shift_needed
+      let hbit := Nat.log2 diffVal
+      let shiftNeeded := (p + 2) - hbit
+      let rawExp := (e1 : Int) - shiftNeeded
+      let scaledSig := diffVal <<< shiftNeeded
       roundAndPack mode f1.isNeg rawExp (scaledSig / 4)
-  else { value := f1 }
+  else
+    { value := f1 }
+
+/-- Perform finite floating-point multiplication. -/
+noncomputable def FloatBits.mulFinite {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
+    OpResult (FloatBits spec) :=
+  let (m1, e1) := f1.getExtendedSignificand
+  let (m2, e2) := f2.getExtendedSignificand
+  let isNeg := f1.isNeg != f2.isNeg
+  let p := spec.sigWidth
+  let bias := spec.bias
+  let prod := m1.toNat * m2.toNat
+  let rawExp : Int := (e1 : Int) + (e2 : Int) - (bias : Int)
+  if prod ≥ 2 ^ (2 * p + 1) then roundAndPack mode isNeg (rawExp + 1) (prod / 2)
+  else roundAndPack mode isNeg rawExp prod
+
+/-- Perform finite floating-point division. -/
+noncomputable def FloatBits.divFinite {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
+    OpResult (FloatBits spec) :=
+  let (m1, e1) := f1.getExtendedSignificand
+  let (m2, e2) := f2.getExtendedSignificand
+  let isNeg := f1.isNeg != f2.isNeg
+  let p := spec.sigWidth
+  let bias := spec.bias
+  let dividend := m1.toNat <<< (p + 2)
+  let q := dividend / m2.toNat
+  let r := dividend % m2.toNat
+  let qWithSticky := if r != 0 then q ||| 1 else q
+  let rawExp : Int := (e1 : Int) - (e2 : Int) + (bias : Int)
+  if qWithSticky ≥ 2 ^ (2 * p + 2) then roundAndPack mode isNeg (rawExp + 1) (qWithSticky / 4)
+  else roundAndPack mode isNeg rawExp (qWithSticky / 2)
 
 /-- Main addition function. -/
 noncomputable def FloatBits.add {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
@@ -145,25 +176,13 @@ noncomputable def FloatBits.add {spec : BinarySpec} (f1 f2 : FloatBits spec) (mo
       let exact := f1.toReal + f2.toReal
       let rounded := addSpec spec.toFormat mode f1.toReal f2.toReal
       let negZero := addZeroSign f1 f2 mode
+      let specValue := FloatBits.ofRealOrInfSigned spec rounded negZero
       let flags := {
         inexact := inexactFlag exact rounded
         overflow := overflowFlag spec.toFormat exact
         underflow := underflowFlag spec.toFormat exact rounded
       }
-      { value := FloatBits.ofRealOrInfSigned spec rounded negZero, flags := flags }
-
-/-- Perform finite floating-point multiplication. -/
-def FloatBits.mulFinite {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
-    OpResult (FloatBits spec) :=
-  let (m1, e1) := f1.getExtendedSignificand
-  let (m2, e2) := f2.getExtendedSignificand
-  let isNeg := f1.isNeg != f2.isNeg
-  let p := spec.sigWidth
-  let bias := spec.bias
-  let prod := m1.toNat * m2.toNat
-  let rawExp : Int := (e1 : Int) + (e2 : Int) - (bias : Int)
-  if prod ≥ 2^(2*p + 1) then roundAndPack mode isNeg (rawExp + 1) (prod / 2)
-  else roundAndPack mode isNeg rawExp prod
+      { value := specValue, flags := flags }
 
 /-- Main multiplication function. -/
 noncomputable def FloatBits.mul {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
@@ -173,28 +192,13 @@ noncomputable def FloatBits.mul {spec : BinarySpec} (f1 f2 : FloatBits spec) (mo
   | none =>
       let exact := f1.toReal * f2.toReal
       let rounded := mulSpec spec.toFormat mode f1.toReal f2.toReal
+      let specValue := FloatBits.ofRealOrInfSigned spec rounded (mulZeroSign f1 f2)
       let flags := {
         inexact := inexactFlag exact rounded
         overflow := overflowFlag spec.toFormat exact
         underflow := underflowFlag spec.toFormat exact rounded
       }
-      { value := FloatBits.ofRealOrInfSigned spec rounded (mulZeroSign f1 f2), flags := flags }
-
-/-- Perform finite floating-point division. -/
-def FloatBits.divFinite {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
-    OpResult (FloatBits spec) :=
-  let (m1, e1) := f1.getExtendedSignificand
-  let (m2, e2) := f2.getExtendedSignificand
-  let isNeg := f1.isNeg != f2.isNeg
-  let p := spec.sigWidth
-  let bias := spec.bias
-  let dividend := m1.toNat <<< (p + 2)
-  let q := dividend / m2.toNat
-  let r := dividend % m2.toNat
-  let q_with_sticky := if r != 0 then q ||| 1 else q
-  let rawExp : Int := (e1 : Int) - (e2 : Int) + (bias : Int)
-  if q_with_sticky ≥ 2^(2*p + 2) then roundAndPack mode isNeg (rawExp + 1) (q_with_sticky / 4)
-  else roundAndPack mode isNeg rawExp (q_with_sticky / 2)
+      { value := specValue, flags := flags }
 
 /-- Main division function. -/
 noncomputable def FloatBits.div {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
@@ -204,15 +208,16 @@ noncomputable def FloatBits.div {spec : BinarySpec} (f1 f2 : FloatBits spec) (mo
   | none =>
       let exact := f1.toReal / f2.toReal
       let rounded := divSpec spec.toFormat mode f1.toReal f2.toReal
+      let specValue := FloatBits.ofRealOrInfSigned spec rounded (mulZeroSign f1 f2)
       let flags := {
         inexact := inexactFlag exact rounded
         overflow := overflowFlag spec.toFormat exact
         underflow := underflowFlag spec.toFormat exact rounded
       }
-      { value := FloatBits.ofRealOrInfSigned spec rounded (mulZeroSign f1 f2), flags := flags }
+      { value := specValue, flags := flags }
 
 /-- scaleB(x, N): Compute x * 2^N by adjusting the exponent. -/
-def FloatBits.scaleB {spec : BinarySpec} (f : FloatBits spec) (N : Int) : 
+noncomputable def FloatBits.scaleB {spec : BinarySpec} (f : FloatBits spec) (N : Int) : 
     OpResult (FloatBits spec) :=
   match f.classify with
   | .nan | .infinite | .zero => { value := f }

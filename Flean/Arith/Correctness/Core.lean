@@ -80,55 +80,35 @@ theorem castFlagsSpec_correct (srcFmt dstFmt : FloatFormat) (mode : RoundingMode
 
 /-! ### Representability -/
 
-theorem mulSpec_isRepresentable (fmt : FloatFormat) (mode : RoundingMode) (a b : ℝ) :
-    isRepresentable fmt (mulSpec fmt mode a b) := by
-  unfold mulSpec round
+private theorem round_isRepresentable (fmt : FloatFormat) (mode : RoundingMode) (x : ℝ) :
+    isRepresentable fmt (round fmt mode x) := by
+  unfold round
   cases mode <;> first
     | exact roundTZ_isRepresentable fmt _
     | exact roundDN_isRepresentable fmt _
     | exact roundUP_isRepresentable fmt _
     | exact roundNNE_isRepresentable fmt _
     | exact roundNNA_isRepresentable fmt _
+
+theorem mulSpec_isRepresentable (fmt : FloatFormat) (mode : RoundingMode) (a b : ℝ) :
+    isRepresentable fmt (mulSpec fmt mode a b) := by
+  simpa [mulSpec] using round_isRepresentable fmt mode (a * b)
 
 theorem addSpec_isRepresentable (fmt : FloatFormat) (mode : RoundingMode) (a b : ℝ) :
     isRepresentable fmt (addSpec fmt mode a b) := by
-  unfold addSpec round
-  cases mode <;> first
-    | exact roundTZ_isRepresentable fmt _
-    | exact roundDN_isRepresentable fmt _
-    | exact roundUP_isRepresentable fmt _
-    | exact roundNNE_isRepresentable fmt _
-    | exact roundNNA_isRepresentable fmt _
+  simpa [addSpec] using round_isRepresentable fmt mode (a + b)
 
 theorem divSpec_isRepresentable (fmt : FloatFormat) (mode : RoundingMode) (a b : ℝ) :
     isRepresentable fmt (divSpec fmt mode a b) := by
-  unfold divSpec round
-  cases mode <;> first
-    | exact roundTZ_isRepresentable fmt _
-    | exact roundDN_isRepresentable fmt _
-    | exact roundUP_isRepresentable fmt _
-    | exact roundNNE_isRepresentable fmt _
-    | exact roundNNA_isRepresentable fmt _
+  simpa [divSpec] using round_isRepresentable fmt mode (a / b)
 
 theorem sqrtSpec_isRepresentable (fmt : FloatFormat) (mode : RoundingMode) (a : ℝ) :
     isRepresentable fmt (sqrtSpec fmt mode a) := by
-  unfold sqrtSpec round
-  cases mode <;> first
-    | exact roundTZ_isRepresentable fmt _
-    | exact roundDN_isRepresentable fmt _
-    | exact roundUP_isRepresentable fmt _
-    | exact roundNNE_isRepresentable fmt _
-    | exact roundNNA_isRepresentable fmt _
+  simpa [sqrtSpec] using round_isRepresentable fmt mode (Real.sqrt a)
 
 theorem fmaSpec_isRepresentable (fmt : FloatFormat) (mode : RoundingMode) (a b c : ℝ) :
     isRepresentable fmt (fmaSpec fmt mode a b c) := by
-  unfold fmaSpec round
-  cases mode <;> first
-    | exact roundTZ_isRepresentable fmt _
-    | exact roundDN_isRepresentable fmt _
-    | exact roundUP_isRepresentable fmt _
-    | exact roundNNE_isRepresentable fmt _
-    | exact roundNNA_isRepresentable fmt _
+  simpa [fmaSpec] using round_isRepresentable fmt mode (a * b + c)
 
 /-! ### Rounding utilities -/
 
@@ -146,13 +126,7 @@ theorem round_repr_id (fmt : FloatFormat) (mode : RoundingMode) {x : ℝ}
 
 theorem round_zero (fmt : FloatFormat) (mode : RoundingMode) :
     round fmt mode 0 = 0 := by
-  unfold round
-  cases mode with
-  | roundTowardZero => exact roundTZ_zero fmt
-  | roundTowardPositive => exact roundUP_zero fmt
-  | roundTowardNegative => exact roundDN_zero fmt
-  | roundNearestTiesToEven => exact roundNNE_zero fmt
-  | roundNearestTiesAway => exact roundNNA_zero fmt
+  exact round_repr_id fmt mode (zero_isRepresentable fmt)
 
 /-- Rounding a FloatBits.toReal in any mode gives back the value. -/
 theorem toReal_round_id {spec : BinarySpec} (f : FloatBits spec)
@@ -227,17 +201,18 @@ theorem divSpecial_none_of_finite {spec : BinarySpec} (a b : FloatBits spec)
   unfold FloatBits.divSpecial
   rcases ha with ha | ha <;> rcases hb with hb | hb <;> simp [ha, hb]
 
-/-- The exact-input case: when GRS bits are zero, roundAndPack preserves the value. -/
+/-- `roundAndPack` preserves exact normalized payloads in-range. -/
 theorem roundAndPack_exact_preserves {spec : BinarySpec} (mode : RoundingMode) (isNeg : Bool)
     (rawExp : Int) (rawSig : Nat)
-    (hexp_pos : 1 ≤ rawExp) (hexp_max : rawExp < 2 ^ spec.expWidth - 1)
-    (hsig : rawSig < 2 ^ (spec.sigWidth + 1)) :
-    (roundAndPack mode isNeg rawExp rawSig).value =
+    (hexp_pos : 1 ≤ rawExp)
+    (hexp_max : rawExp < 2 ^ spec.expWidth - 1)
+    (hsig_hi : rawSig < 2 ^ (spec.sigWidth + 1)) :
+    (roundAndPack (spec := spec) mode isNeg rawExp rawSig).value =
       FloatBits.fromFields
         (if isNeg then BitVec.ofNat 1 1 else BitVec.ofNat 1 0)
         (BitVec.ofNat spec.expWidth rawExp.toNat)
         (BitVec.ofNat spec.sigWidth (rawSig % 2 ^ spec.sigWidth)) :=
-  roundAndPack_normal_exact mode isNeg rawExp rawSig hexp_pos hexp_max hsig
+  roundAndPack_normal_exact mode isNeg rawExp rawSig hexp_pos hexp_max hsig_hi
 
 /-! ## Section 5: Bit-level equivalence (specifications)
 
@@ -431,8 +406,13 @@ theorem addBitEquiv (spec : BinarySpec) (mode : RoundingMode) :
   rw [hnone]
   let y := addSpec spec.toFormat mode a.toReal b.toReal
   intro hout
+  have hout' :
+      (FloatBits.ofRealOrInfSigned spec y (addZeroSign a b mode)).classify = .normal ∨
+      (FloatBits.ofRealOrInfSigned spec y (addZeroSign a b mode)).classify = .subnormal ∨
+      (FloatBits.ofRealOrInfSigned spec y (addZeroSign a b mode)).classify = .zero := by
+    simpa [y] using hout
   simpa [y] using
-    (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (addZeroSign a b mode) hout)
+    (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (addZeroSign a b mode) hout')
 
 theorem addBitFlagEquiv (spec : BinarySpec) (mode : RoundingMode) :
     AddBitFlagEquiv spec mode := by
@@ -452,15 +432,25 @@ theorem mulBitEquiv (spec : BinarySpec) (mode : RoundingMode) :
     rw [hnone]
     let y := mulSpec spec.toFormat mode a.toReal b.toReal
     intro hout
+    have hout' :
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .normal ∨
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .subnormal ∨
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .zero := by
+      simpa [y] using hout
     simpa [y] using
-      (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout)
+      (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout')
   · have hnone := mulSpecial_none_of_finite a b (Or.inl ha) (Or.inr hb)
     unfold FloatBits.mul
     rw [hnone]
     let y := mulSpec spec.toFormat mode a.toReal b.toReal
     intro hout
+    have hout' :
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .normal ∨
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .subnormal ∨
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .zero := by
+      simpa [y] using hout
     simpa [y] using
-      (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout)
+      (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout')
   · intro _
     unfold FloatBits.mul mulSpec
     have hb0 : b.toReal = 0 := by
@@ -474,15 +464,25 @@ theorem mulBitEquiv (spec : BinarySpec) (mode : RoundingMode) :
     rw [hnone]
     let y := mulSpec spec.toFormat mode a.toReal b.toReal
     intro hout
+    have hout' :
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .normal ∨
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .subnormal ∨
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .zero := by
+      simpa [y] using hout
     simpa [y] using
-      (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout)
+      (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout')
   · have hnone := mulSpecial_none_of_finite a b (Or.inr ha) (Or.inr hb)
     unfold FloatBits.mul
     rw [hnone]
     let y := mulSpec spec.toFormat mode a.toReal b.toReal
     intro hout
+    have hout' :
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .normal ∨
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .subnormal ∨
+        (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .zero := by
+      simpa [y] using hout
     simpa [y] using
-      (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout)
+      (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout')
   · intro _
     unfold FloatBits.mul mulSpec
     have hb0 : b.toReal = 0 := by
@@ -536,8 +536,13 @@ theorem divBitEquiv (spec : BinarySpec) (mode : RoundingMode) :
   rw [hnone]
   let y := divSpec spec.toFormat mode a.toReal b.toReal
   intro hout
+  have hout' :
+      (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .normal ∨
+      (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .subnormal ∨
+      (FloatBits.ofRealOrInfSigned spec y (mulZeroSign a b)).classify = .zero := by
+    simpa [y] using hout
   simpa [y] using
-    (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout)
+    (ofRealOrInfSigned_toReal_of_finite (spec := spec) (x := y) (mulZeroSign a b) hout')
 
 theorem divBitFlagEquiv (spec : BinarySpec) (mode : RoundingMode) :
     DivBitFlagEquiv spec mode := by

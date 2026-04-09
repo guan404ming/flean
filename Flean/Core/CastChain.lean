@@ -145,37 +145,34 @@ theorem double_cast_safe {fmt1 fmt2 : FloatFormat} (href : FormatRefines fmt1 fm
 
 /-! ## Concrete format instances -/
 
+private theorem formatRefines_of_le {fmt1 fmt2 : FloatFormat}
+    (hradix : fmt1.β = fmt2.β)
+    (hprec : fmt1.prec ≤ fmt2.prec)
+    (hemin : fmt2.emin ≤ fmt1.emin) :
+    FormatRefines fmt1 fmt2 where
+  radix_eq := hradix
+  prec_le := hprec
+  emin_le := hemin
+
 /-- binary16 refines to binary32. -/
-theorem binary16_refines_binary32 : FormatRefines binary16 binary32 where
-  radix_eq := rfl
-  prec_le := by decide
-  emin_le := by decide
+theorem binary16_refines_binary32 : FormatRefines binary16 binary32 :=
+  formatRefines_of_le rfl (by decide) (by decide)
 
 /-- bfloat16 refines to binary32. -/
-theorem bfloat16_refines_binary32 : FormatRefines bfloat16 binary32 where
-  radix_eq := rfl
-  prec_le := by decide
-  emin_le := by decide
+theorem bfloat16_refines_binary32 : FormatRefines bfloat16 binary32 :=
+  formatRefines_of_le rfl (by decide) (by decide)
 
-theorem binary32_refines_binary64 : FormatRefines binary32 binary64 where
-  radix_eq := rfl
-  prec_le := by decide
-  emin_le := by decide
+theorem binary32_refines_binary64 : FormatRefines binary32 binary64 :=
+  formatRefines_of_le rfl (by decide) (by decide)
 
-theorem binary16_refines_binary64 : FormatRefines binary16 binary64 where
-  radix_eq := rfl
-  prec_le := by decide
-  emin_le := by decide
+theorem binary16_refines_binary64 : FormatRefines binary16 binary64 :=
+  formatRefines_of_le rfl (by decide) (by decide)
 
-theorem bfloat16_refines_binary64 : FormatRefines bfloat16 binary64 where
-  radix_eq := rfl
-  prec_le := by decide
-  emin_le := by decide
+theorem bfloat16_refines_binary64 : FormatRefines bfloat16 binary64 :=
+  formatRefines_of_le rfl (by decide) (by decide)
 
-theorem binary64_refines_binary128 : FormatRefines binary64 binary128 where
-  radix_eq := rfl
-  prec_le := by decide
-  emin_le := by decide
+theorem binary64_refines_binary128 : FormatRefines binary64 binary128 :=
+  formatRefines_of_le rfl (by decide) (by decide)
 
 /-- f32 → f16 → f32 round-trip is identity for f16-representable values. -/
 theorem f16_widen_narrow_f32 {x : ℝ} (hx : isRepresentable binary16 x) :

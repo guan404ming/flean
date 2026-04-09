@@ -10,7 +10,7 @@ Round a floating-point number to its nearest integral value (as a float).
 namespace Flean
 
 /-- roundToIntegral: Returns the nearest integer in the same float format. -/
-def FloatBits.roundToIntegral {spec : BinarySpec} (f : FloatBits spec) (mode : RoundingMode) : 
+noncomputable def FloatBits.roundToIntegral {spec : BinarySpec} (f : FloatBits spec) (mode : RoundingMode) : 
     OpResult (FloatBits spec) :=
   match f.classify with
   | .nan | .infinite | .zero => { value := f }

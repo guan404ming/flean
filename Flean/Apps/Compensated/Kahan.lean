@@ -271,14 +271,14 @@ theorem kahanStep_zero_repr {fmt : FloatFormat} (hβ : fmt.β = 2)
   rw [hk]
   exact ⟨fast2Sum_fst_repr fmt s x, neg_isRepresentable (fast2Sum_snd_repr fmt s x)⟩
 
-theorem kahanStep_zero_exact_binary64 {s x : ℝ}
+abbrev kahanStep_zero_exact_binary64 {s x : ℝ}
     (hs : isRepresentable binary64 s) (hx : isRepresentable binary64 x)
     (hmag : |x| ≤ |s|) :
     let ⟨s', c'⟩ := kahanStep binary64 s 0 x
     s + x = s' - c' :=
   kahanStep_zero_exact (fmt := binary64) (by rfl) hs hx hmag
 
-theorem kahanStep_zero_exact_binary32 {s x : ℝ}
+abbrev kahanStep_zero_exact_binary32 {s x : ℝ}
     (hs : isRepresentable binary32 s) (hx : isRepresentable binary32 x)
     (hmag : |x| ≤ |s|) :
     let ⟨s', c'⟩ := kahanStep binary32 s 0 x
@@ -375,12 +375,12 @@ theorem kahanFold_zero_tight_bound {fmt : FloatFormat} (hβ : fmt.β = 2)
     |xs.sum - (kahanFold fmt (0, 0) xs).1| = |(kahanFold fmt (0, 0) xs).2| := by
   simpa [kahanValue] using kahanFold_tight_bound hβ hchain
 
-theorem kahanFold_zero_tight_bound_binary64 {xs : List ℝ}
+abbrev kahanFold_zero_tight_bound_binary64 {xs : List ℝ}
     (hchain : KahanChain binary64 (0, 0) xs) :
     |xs.sum - (kahanFold binary64 (0, 0) xs).1| = |(kahanFold binary64 (0, 0) xs).2| :=
   kahanFold_zero_tight_bound (fmt := binary64) (by rfl) hchain
 
-theorem kahanFold_zero_tight_bound_binary32 {xs : List ℝ}
+abbrev kahanFold_zero_tight_bound_binary32 {xs : List ℝ}
     (hchain : KahanChain binary32 (0, 0) xs) :
     |xs.sum - (kahanFold binary32 (0, 0) xs).1| = |(kahanFold binary32 (0, 0) xs).2| :=
   kahanFold_zero_tight_bound (fmt := binary32) (by rfl) hchain
@@ -413,22 +413,22 @@ theorem kahanSum_tight_bound {fmt : FloatFormat} (hβ : fmt.β = 2) {xs : List �
         kahanFold_tight_bound hβ hchain
       simpa [kahanSum, kahanValue] using hfold
 
-theorem kahanSum_exact_binary64 {xs : List ℝ}
+abbrev kahanSum_exact_binary64 {xs : List ℝ}
     (hin : KahanInput binary64 xs) :
     kahanValue (kahanSum binary64 xs) = xs.sum :=
   kahanSum_exact (fmt := binary64) (by rfl) hin
 
-theorem kahanSum_exact_binary32 {xs : List ℝ}
+abbrev kahanSum_exact_binary32 {xs : List ℝ}
     (hin : KahanInput binary32 xs) :
     kahanValue (kahanSum binary32 xs) = xs.sum :=
   kahanSum_exact (fmt := binary32) (by rfl) hin
 
-theorem kahanSum_tight_bound_binary64 {xs : List ℝ}
+abbrev kahanSum_tight_bound_binary64 {xs : List ℝ}
     (hin : KahanInput binary64 xs) :
     |xs.sum - (kahanSum binary64 xs).1| = |(kahanSum binary64 xs).2| :=
   kahanSum_tight_bound (fmt := binary64) (by rfl) hin
 
-theorem kahanSum_tight_bound_binary32 {xs : List ℝ}
+abbrev kahanSum_tight_bound_binary32 {xs : List ℝ}
     (hin : KahanInput binary32 xs) :
     |xs.sum - (kahanSum binary32 xs).1| = |(kahanSum binary32 xs).2| :=
   kahanSum_tight_bound (fmt := binary32) (by rfl) hin

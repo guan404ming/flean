@@ -106,22 +106,22 @@ theorem neumaierSum_tight_bound {fmt : FloatFormat} (hβ : fmt.β = 2) {xs : Lis
       have habs : |xs.sum - s| = |(-c)| := congrArg abs hdiff
       simpa [hsum, abs_neg] using habs
 
-theorem neumaierSum_exact_binary64 {xs : List ℝ}
+abbrev neumaierSum_exact_binary64 {xs : List ℝ}
     (hin : NeumaierInput binary64 xs) :
     neumaierValue (neumaierSum binary64 xs) = xs.sum :=
   neumaierSum_exact (fmt := binary64) (by rfl) hin
 
-theorem neumaierSum_exact_binary32 {xs : List ℝ}
+abbrev neumaierSum_exact_binary32 {xs : List ℝ}
     (hin : NeumaierInput binary32 xs) :
     neumaierValue (neumaierSum binary32 xs) = xs.sum :=
   neumaierSum_exact (fmt := binary32) (by rfl) hin
 
-theorem neumaierSum_tight_bound_binary64 {xs : List ℝ}
+abbrev neumaierSum_tight_bound_binary64 {xs : List ℝ}
     (hin : NeumaierInput binary64 xs) :
     |xs.sum - (neumaierSum binary64 xs).1| = |(neumaierSum binary64 xs).2| :=
   neumaierSum_tight_bound (fmt := binary64) (by rfl) hin
 
-theorem neumaierSum_tight_bound_binary32 {xs : List ℝ}
+abbrev neumaierSum_tight_bound_binary32 {xs : List ℝ}
     (hin : NeumaierInput binary32 xs) :
     |xs.sum - (neumaierSum binary32 xs).1| = |(neumaierSum binary32 xs).2| :=
   neumaierSum_tight_bound (fmt := binary32) (by rfl) hin
