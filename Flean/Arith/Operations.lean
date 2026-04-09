@@ -216,13 +216,14 @@ noncomputable def FloatBits.div {spec : BinarySpec} (f1 f2 : FloatBits spec) (mo
       }
       { value := specValue, flags := flags }
 
-/-- scaleB(x, N): Compute x * 2^N by adjusting the exponent. -/
-noncomputable def FloatBits.scaleB {spec : BinarySpec} (f : FloatBits spec) (N : Int) : 
+/-- scaleB(x, N): Compute x * 2^N, rounding according to `mode` when needed. -/
+noncomputable def FloatBits.scaleB {spec : BinarySpec} (f : FloatBits spec) (N : Int)
+    (mode : RoundingMode := .roundNearestTiesToEven) :
     OpResult (FloatBits spec) :=
   match f.classify with
   | .nan | .infinite | .zero => { value := f }
   | .normal | .subnormal =>
     let (m, e) := f.getExtendedSignificand
-    roundAndPack .roundTowardZero f.isNeg ((e : Int) + N) m.toNat
+    roundAndPack mode f.isNeg ((e : Int) + N) m.toNat
 
 end Flean
