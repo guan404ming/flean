@@ -51,16 +51,26 @@ def roundAndPack {spec : BinarySpec} (mode : RoundingMode) (isNeg : Bool)
   let roundUp := roundDecision mode isNeg effSig lsb g r s
   let roundedSig := if roundUp then effSig + 1 else effSig
   let (finalSig, finalExp) :=
-    if roundedSig ≥ 2^(p + 1) then
+    if effExp = 0 && roundedSig = 2^p then
+      -- Rounded subnormal can carry into the minimum normal exponent.
+      (roundedSig, (1 : Int))
+    else if roundedSig ≥ 2^(p + 1) then
       (roundedSig / 2, effExp + 1)
     else
       (roundedSig, effExp)
+  let maxFiniteSigned :=
+    if isNeg then
+      FloatBits.fromFields (BitVec.ofNat 1 1)
+        (BitVec.ofNat spec.expWidth (2 ^ spec.expWidth - 2))
+        (BitVec.allOnes spec.sigWidth)
+    else
+      FloatBits.maxFinite spec
   if finalExp ≥ maxExp then
     let overflowResult :=
       match mode with
-      | .roundTowardZero => FloatBits.maxFinite spec
-      | .roundTowardPositive => if !isNeg then FloatBits.posInf spec else FloatBits.maxFinite spec
-      | .roundTowardNegative => if isNeg then FloatBits.negInf spec else FloatBits.maxFinite spec
+      | .roundTowardZero => maxFiniteSigned
+      | .roundTowardPositive => if !isNeg then FloatBits.posInf spec else maxFiniteSigned
+      | .roundTowardNegative => if isNeg then FloatBits.negInf spec else maxFiniteSigned
       | _ => if isNeg then FloatBits.negInf spec else FloatBits.posInf spec
     { value := overflowResult, flags := { overflow := true, inexact := true } }
   else
