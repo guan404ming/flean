@@ -84,6 +84,56 @@ def roundAndPack {spec : BinarySpec} (mode : RoundingMode) (isNeg : Bool)
 
 /-! ## Properties -/
 
+/-- Full branch-by-branch correctness characterization of `roundAndPack`
+    including all returned flags. -/
+theorem roundAndPack_full_correct {spec : BinarySpec}
+    (mode : RoundingMode) (isNeg : Bool) (rawExp : Int) (rawSig : Nat) :
+    let p := spec.sigWidth
+    let maxExp := (2^spec.expWidth - 1 : Int)
+    let (effExp, effSig, g, r, s) :=
+      if rawExp < 1 then
+        let shift := 1 - rawExp
+        let (g', r', s') := getGRS rawSig shift
+        ((0 : Int), rawSig >>> shift.toNat, g', r', s')
+      else
+        (rawExp, rawSig, false, false, false)
+    let lsb := effSig % 2 == 1
+    let roundUp := roundDecision mode isNeg effSig lsb g r s
+    let roundedSig := if roundUp then effSig + 1 else effSig
+    let (finalSig, finalExp) :=
+      if effExp = 0 && roundedSig = 2^p then
+        (roundedSig, (1 : Int))
+      else if roundedSig ≥ 2^(p + 1) then
+        (roundedSig / 2, effExp + 1)
+      else
+        (roundedSig, effExp)
+    let maxFiniteSigned :=
+      if isNeg then
+        FloatBits.fromFields (BitVec.ofNat 1 1)
+          (BitVec.ofNat spec.expWidth (2 ^ spec.expWidth - 2))
+          (BitVec.allOnes spec.sigWidth)
+      else
+        FloatBits.maxFinite spec
+    let overflowResult :=
+      match mode with
+      | .roundTowardZero => maxFiniteSigned
+      | .roundTowardPositive => if !isNeg then FloatBits.posInf spec else maxFiniteSigned
+      | .roundTowardNegative => if isNeg then FloatBits.negInf spec else maxFiniteSigned
+      | _ => if isNeg then FloatBits.negInf spec else FloatBits.posInf spec
+    let finiteValue :=
+      FloatBits.fromFields
+        (if isNeg then BitVec.ofNat 1 1 else BitVec.ofNat 1 0)
+        (BitVec.ofNat spec.expWidth finalExp.toNat)
+        (BitVec.ofNat p (finalSig % 2^p))
+    let inexact := (g || r || s || roundUp)
+    let finiteFlags := { inexact := inexact, underflow := (rawExp < 1) && inexact }
+    roundAndPack mode isNeg rawExp rawSig =
+      if finalExp ≥ maxExp then
+        { value := overflowResult, flags := { overflow := true, inexact := true } }
+      else
+        { value := finiteValue, flags := finiteFlags } := by
+  simp [roundAndPack]
+
 /-- No rounding occurs when Guard, Round, and Sticky bits are all false. -/
 theorem roundDecision_no_grs (mode : RoundingMode) (isNeg : Bool) (m : Nat) (lsb : Bool) :
     roundDecision mode isNeg m lsb false false false = false := by
