@@ -105,6 +105,7 @@ private theorem upcast16To32_toReal_eq
   exact hcast_real.trans hfix32
 
 theorem mpMulBits_toReal_eq_mpMul
+    (hmulEquiv32 : MulBitEquiv binarySpec32 .roundNearestTiesToEven)
     {a b : FloatBits binarySpec16} (hin : MpMulBitsInput a b) :
     (mpMulBits a b).toReal = mpMul a.toReal b.toReal := by
   rcases hin with ⟨ha, hb, hau, hbu, hmul_fin⟩
@@ -117,7 +118,7 @@ theorem mpMulBits_toReal_eq_mpMul
         mulSpec binarySpec32.toFormat .roundNearestTiesToEven
           (upcast16To32 a).toReal (upcast16To32 b).toReal := by
     simpa [mpMulBits] using
-      mulBitEquiv binarySpec32 .roundNearestTiesToEven (upcast16To32 a) (upcast16To32 b) hau hbu hmul_fin
+      hmulEquiv32 (upcast16To32 a) (upcast16To32 b) hau hbu hmul_fin
   have ha_repr16 : isRepresentable binarySpec16.toFormat a.toReal :=
     FloatBits.toReal_isRepresentable_of_finiteOrZero a ha
   have hb_repr16 : isRepresentable binarySpec16.toFormat b.toReal :=
@@ -136,18 +137,20 @@ theorem mpMulBits_toReal_eq_mpMul
             roundNNE_repr_fixed binarySpec16.toFormat hb_repr16]
 
 theorem mpAccStepBits_toReal_eq_mpAccStep
+    (haddEquiv32 : AddBitEquiv binarySpec32 .roundNearestTiesToEven)
+    (hmulEquiv32 : MulBitEquiv binarySpec32 .roundNearestTiesToEven)
     {acc : FloatBits binarySpec32} {a b : FloatBits binarySpec16}
     (hin : MpAccStepBitsInput acc a b) :
     (mpAccStepBits acc a b).toReal = mpAccStep acc.toReal a.toReal b.toReal := by
   rcases hin with ⟨hacc, hmul_in, hres⟩
   have hmul_real : (mpMulBits a b).toReal = mpMul a.toReal b.toReal :=
-    mpMulBits_toReal_eq_mpMul hmul_in
+    mpMulBits_toReal_eq_mpMul hmulEquiv32 hmul_in
   rcases hmul_in with ⟨_, _, _, _, hmul_fin⟩
   have hadd_real :
       (mpAccStepBits acc a b).toReal =
         addSpec binarySpec32.toFormat .roundNearestTiesToEven acc.toReal (mpMulBits a b).toReal := by
     simpa [mpAccStepBits] using
-      addBitEquiv binarySpec32 .roundNearestTiesToEven acc (mpMulBits a b) hacc hmul_fin hres
+      haddEquiv32 acc (mpMulBits a b) hacc hmul_fin hres
   calc
     (mpAccStepBits acc a b).toReal
         = addSpec binarySpec32.toFormat .roundNearestTiesToEven acc.toReal (mpMulBits a b).toReal := hadd_real
@@ -184,6 +187,8 @@ private theorem foldl_map_zip_toReal_eq
       simp [ih]
 
 theorem mpDotProdBitsFold_toReal_eq
+    (haddEquiv32 : AddBitEquiv binarySpec32 .roundNearestTiesToEven)
+    (hmulEquiv32 : MulBitEquiv binarySpec32 .roundNearestTiesToEven)
     {acc : FloatBits binarySpec32} {xs : List (FloatBits binarySpec16 × FloatBits binarySpec16)}
     (hchain : MpDotProdBitsChain acc xs) :
     (mpDotProdBitsFold acc xs).toReal =
@@ -196,7 +201,7 @@ theorem mpDotProdBitsFold_toReal_eq
       rcases hchain with ⟨hstep, htail⟩
       have hstep_real :
           (mpAccStepBits acc a b).toReal = mpAccStep acc.toReal a.toReal b.toReal :=
-        mpAccStepBits_toReal_eq_mpAccStep hstep
+        mpAccStepBits_toReal_eq_mpAccStep haddEquiv32 hmulEquiv32 hstep
       have htail_real :
           (mpDotProdBitsFold (mpAccStepBits acc a b) xs).toReal =
             xs.foldl (fun racc ab => mpAccStep racc ab.1.toReal ab.2.toReal)
@@ -205,11 +210,13 @@ theorem mpDotProdBitsFold_toReal_eq
       simp [mpDotProdBitsFold, hstep_real, htail_real]
 
 theorem mpDotProdBits_toReal_eq_mpDotProd
+    (haddEquiv32 : AddBitEquiv binarySpec32 .roundNearestTiesToEven)
+    (hmulEquiv32 : MulBitEquiv binarySpec32 .roundNearestTiesToEven)
     {as bs : List (FloatBits binarySpec16)}
     (hchain : MpDotProdBitsChain (FloatBits.zero binarySpec32) (as.zip bs)) :
     (mpDotProdBits as bs).toReal = mpDotProd (as.map FloatBits.toReal) (bs.map FloatBits.toReal) := by
   have hfold :=
-    mpDotProdBitsFold_toReal_eq hchain
+    mpDotProdBitsFold_toReal_eq haddEquiv32 hmulEquiv32 hchain
   unfold mpDotProdBits mpDotProd
   rw [zip_map_toReal_eq_map_zip]
   rw [← foldl_map_zip_toReal_eq]

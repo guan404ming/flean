@@ -54,6 +54,13 @@ def FloatBits.copySign {spec : BinarySpec} (dst src : FloatBits spec) : FloatBit
   let srcSign := src.bits &&& signMask
   ⟨dstCleared ||| srcSign⟩
 
+/-- Compare magnitudes by exponent/significand bit pattern (ignoring sign bit). -/
+def FloatBits.finiteMagGE {spec : BinarySpec} (a b : FloatBits spec) : Bool :=
+  let width := spec.expWidth + spec.sigWidth
+  let amag := (a.bits.extractLsb' 0 width).toNat
+  let bmag := (b.bits.extractLsb' 0 width).toNat
+  amag ≥ bmag
+
 /-- Specification of addition behavior for special values. -/
 def FloatBits.addSpecial {spec : BinarySpec}
     (a b : FloatBits spec) : Option (OpResult (FloatBits spec)) :=
@@ -136,7 +143,16 @@ noncomputable def FloatBits.addFiniteOppositeSign {spec : BinarySpec} (f1 f2 : F
       let scaledSig := diffVal <<< shiftNeeded
       roundAndPack mode f1.isNeg rawExp (scaledSig / 4)
   else
-    { value := f1 }
+    let diffVal := m2Aligned - (m1Ext + sticky)
+    if diffVal == 0 then
+      let z := if mode = .roundTowardNegative then FloatBits.negZero spec else FloatBits.posZero spec
+      { value := z }
+    else
+      let hbit := Nat.log2 diffVal
+      let shiftNeeded := (p + 2) - hbit
+      let rawExp := (e1 : Int) - shiftNeeded
+      let scaledSig := diffVal <<< shiftNeeded
+      roundAndPack mode f2.isNeg rawExp (scaledSig / 4)
 
 /-- Perform finite floating-point multiplication. -/
 noncomputable def FloatBits.mulFinite {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
@@ -173,48 +189,32 @@ noncomputable def FloatBits.add {spec : BinarySpec} (f1 f2 : FloatBits spec) (mo
   match f1.addSpecial f2 with
   | some res => res
   | none =>
-      let exact := f1.toReal + f2.toReal
-      let rounded := addSpec spec.toFormat mode f1.toReal f2.toReal
-      let negZero := addZeroSign f1 f2 mode
-      let specValue := FloatBits.ofRealOrInfSigned spec rounded negZero
-      let flags := {
-        inexact := inexactFlag exact rounded
-        overflow := overflowFlag spec.toFormat exact
-        underflow := underflowFlag spec.toFormat exact rounded
-      }
-      { value := specValue, flags := flags }
+      match f1.classify, f2.classify with
+      | .zero, .zero =>
+          let z := if addZeroSign f1 f2 mode then FloatBits.negZero spec else FloatBits.posZero spec
+          { value := z }
+      | .zero, _ => { value := f2 }
+      | _, .zero => { value := f1 }
+      | _, _ =>
+          let (a, b) := if FloatBits.finiteMagGE f1 f2 then (f1, f2) else (f2, f1)
+          if a.isNeg == b.isNeg then
+            a.addFiniteSameSign b mode
+          else
+            a.addFiniteOppositeSign b mode
 
 /-- Main multiplication function. -/
 noncomputable def FloatBits.mul {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
     OpResult (FloatBits spec) :=
   match f1.mulSpecial f2 with
   | some res => res
-  | none =>
-      let exact := f1.toReal * f2.toReal
-      let rounded := mulSpec spec.toFormat mode f1.toReal f2.toReal
-      let specValue := FloatBits.ofRealOrInfSigned spec rounded (mulZeroSign f1 f2)
-      let flags := {
-        inexact := inexactFlag exact rounded
-        overflow := overflowFlag spec.toFormat exact
-        underflow := underflowFlag spec.toFormat exact rounded
-      }
-      { value := specValue, flags := flags }
+  | none => f1.mulFinite f2 mode
 
 /-- Main division function. -/
 noncomputable def FloatBits.div {spec : BinarySpec} (f1 f2 : FloatBits spec) (mode : RoundingMode) :
     OpResult (FloatBits spec) :=
   match f1.divSpecial f2 with
   | some res => res
-  | none =>
-      let exact := f1.toReal / f2.toReal
-      let rounded := divSpec spec.toFormat mode f1.toReal f2.toReal
-      let specValue := FloatBits.ofRealOrInfSigned spec rounded (mulZeroSign f1 f2)
-      let flags := {
-        inexact := inexactFlag exact rounded
-        overflow := overflowFlag spec.toFormat exact
-        underflow := underflowFlag spec.toFormat exact rounded
-      }
-      { value := specValue, flags := flags }
+  | none => f1.divFinite f2 mode
 
 /-- scaleB(x, N): Compute x * 2^N, rounding according to `mode` when needed. -/
 noncomputable def FloatBits.scaleB {spec : BinarySpec} (f : FloatBits spec) (N : Int)

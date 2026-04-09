@@ -58,23 +58,25 @@ theorem mulBitFlagEquiv_zero_left (spec : BinarySpec) (mode : RoundingMode)
   simpa [hspec] using himpl
 
 theorem mulBitFlagEquiv_full (spec : BinarySpec) (mode : RoundingMode) :
+    MulBitFlagEquivFinite spec mode →
     ∀ (a b : FloatBits spec),
       (a.classify = .normal ∨ a.classify = .subnormal ∨ a.classify = .zero) →
       (b.classify = .normal ∨ b.classify = .subnormal ∨ b.classify = .zero) →
       (a.mul b mode).flags = mulFlagsSpec spec.toFormat mode a.toReal b.toReal := by
-  intro a b ha hb
+  intro hfinite a b ha hb
   rcases ha with ha | ha | ha
   · rcases hb with hb | hb | hb
-    · exact mulBitFlagEquivFinite spec mode a b (Or.inl ha) (Or.inl hb)
-    · exact mulBitFlagEquivFinite spec mode a b (Or.inl ha) (Or.inr hb)
+    · exact hfinite a b (Or.inl ha) (Or.inl hb)
+    · exact hfinite a b (Or.inl ha) (Or.inr hb)
     · exact mulBitFlagEquiv_zero_right spec mode a b (Or.inl ha) hb
   · rcases hb with hb | hb | hb
-    · exact mulBitFlagEquivFinite spec mode a b (Or.inr ha) (Or.inl hb)
-    · exact mulBitFlagEquivFinite spec mode a b (Or.inr ha) (Or.inr hb)
+    · exact hfinite a b (Or.inr ha) (Or.inl hb)
+    · exact hfinite a b (Or.inr ha) (Or.inr hb)
     · exact mulBitFlagEquiv_zero_right spec mode a b (Or.inr (Or.inl ha)) hb
   · exact mulBitFlagEquiv_zero_left spec mode a b ha hb
 
 theorem mulBitFlagEquiv (spec : BinarySpec) (mode : RoundingMode) :
+    MulBitFlagEquivFinite spec mode →
     MulBitFlagEquiv spec mode :=
   mulBitFlagEquiv_full spec mode
 
