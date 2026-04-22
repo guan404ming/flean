@@ -75,6 +75,85 @@ theorem mulBitFlagEquiv_full (spec : BinarySpec) (mode : RoundingMode) :
     · exact mulBitFlagEquiv_zero_right spec mode a b (Or.inr (Or.inl ha)) hb
   · exact mulBitFlagEquiv_zero_left spec mode a b ha hb
 
+theorem mulBitFlagEquiv_of_mulFiniteFlagsToSpec (spec : BinarySpec) (mode : RoundingMode)
+    (hfinite : MulFiniteFlagsToSpec spec mode) :
+    MulBitFlagEquiv spec mode := by
+  exact mulBitFlagEquiv_full spec mode
+    (mulBitFlagEquivFinite_of_mulFiniteFlagsToSpec spec mode hfinite)
+
+theorem mulBitFlagEquiv_of_mulFiniteBranchFlags (spec : BinarySpec) (mode : RoundingMode)
+    (hhigh : MulFiniteHighBranchFlagsToSpec spec mode)
+    (hlow : MulFiniteLowBranchFlagsToSpec spec mode) :
+    MulBitFlagEquiv spec mode := by
+  exact mulBitFlagEquiv_full spec mode
+    (mulBitFlagEquivFinite_of_mulFiniteBranchFlags spec mode hhigh hlow)
+
+theorem mulBitEquivAndFlagEquiv_of_mulFiniteObligations
+    (spec : BinarySpec) (mode : RoundingMode)
+    (hval : MulFiniteToSpec spec mode)
+    (hflag : MulFiniteFlagsToSpec spec mode) :
+    MulBitEquiv spec mode ∧ MulBitFlagEquiv spec mode := by
+  exact ⟨
+    mulBitEquiv_of_mulFiniteToSpec spec mode hval,
+    mulBitFlagEquiv_of_mulFiniteFlagsToSpec spec mode hflag
+  ⟩
+
+theorem mulBitEquivAndFlagEquiv_of_mulFiniteExactAndFlagsToSpec
+    (spec : BinarySpec) (mode : RoundingMode)
+    (hexact : MulFiniteExact spec mode)
+    (hflag : MulFiniteFlagsToSpec spec mode) :
+    MulBitEquiv spec mode ∧ MulBitFlagEquiv spec mode := by
+  have hfinite :=
+    mulBitEquivAndFlagEquivFinite_of_mulFiniteExactAndFlagsToSpec
+      spec mode hexact hflag
+  exact ⟨hfinite.1, mulBitFlagEquiv_full spec mode hfinite.2⟩
+
+theorem mulBitEquivAndFlagEquiv_of_mulFiniteExactAndFlags
+    (spec : BinarySpec) (mode : RoundingMode)
+    (h : MulFiniteExactAndFlagsToSpec spec mode) :
+    MulBitEquiv spec mode ∧ MulBitFlagEquiv spec mode := by
+  exact mulBitEquivAndFlagEquiv_of_mulFiniteExactAndFlagsToSpec
+    spec mode h.1 h.2
+
+theorem mulBitEquivAndFlagEquiv_of_mulFiniteBranchObligations
+    (spec : BinarySpec) (mode : RoundingMode)
+    (hhighVal : MulFiniteHighBranchToSpec spec mode)
+    (hlowVal : MulFiniteLowBranchToSpec spec mode)
+    (hhighFlag : MulFiniteHighBranchFlagsToSpec spec mode)
+    (hlowFlag : MulFiniteLowBranchFlagsToSpec spec mode) :
+    MulBitEquiv spec mode ∧ MulBitFlagEquiv spec mode := by
+  exact ⟨
+    mulBitEquiv_of_mulFiniteBranches spec mode hhighVal hlowVal,
+    mulBitFlagEquiv_of_mulFiniteBranchFlags spec mode hhighFlag hlowFlag
+  ⟩
+
+theorem mulBitEquivAndFlagEquiv_of_mulFiniteBranchObligationsToSpec
+    (spec : BinarySpec) (mode : RoundingMode)
+    (hbranch : MulFiniteBranchObligationsToSpec spec mode) :
+    MulBitEquiv spec mode ∧ MulBitFlagEquiv spec mode := by
+  have hfinite := mulBitEquivAndFlagEquivFinite_of_mulFiniteBranchObligationsToSpec
+    spec mode hbranch
+  exact ⟨hfinite.1, mulBitFlagEquiv_full spec mode hfinite.2⟩
+
+theorem mulBitEquivAndFlagEquiv_of_mulFiniteBranchExactAndFlagObligations
+    (spec : BinarySpec) (mode : RoundingMode)
+    (hhighExact : MulFiniteHighBranchExact spec mode)
+    (hlowExact : MulFiniteLowBranchExact spec mode)
+    (hhighFlag : MulFiniteHighBranchFlagsToSpec spec mode)
+    (hlowFlag : MulFiniteLowBranchFlagsToSpec spec mode) :
+    MulBitEquiv spec mode ∧ MulBitFlagEquiv spec mode := by
+  have hfinite :=
+    mulBitEquivAndFlagEquivFinite_of_mulFiniteBranchExactAndFlagObligations
+      spec mode hhighExact hlowExact hhighFlag hlowFlag
+  exact ⟨hfinite.1, mulBitFlagEquiv_full spec mode hfinite.2⟩
+
+theorem mulBitEquivAndFlagEquiv_of_mulFiniteExactAndFlags_viaBranchObligationsToSpec
+    (spec : BinarySpec) (mode : RoundingMode)
+    (h : MulFiniteExactAndFlagsToSpec spec mode) :
+    MulBitEquiv spec mode ∧ MulBitFlagEquiv spec mode := by
+  exact mulBitEquivAndFlagEquiv_of_mulFiniteBranchObligationsToSpec spec mode
+    (mulFiniteBranchObligationsToSpec_of_mulFiniteExactAndFlags spec mode h)
+
 theorem mulBitFlagEquiv (spec : BinarySpec) (mode : RoundingMode) :
     MulBitFlagEquivFinite spec mode →
     MulBitFlagEquiv spec mode :=

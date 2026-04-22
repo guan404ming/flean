@@ -71,6 +71,33 @@ noncomputable def FloatBits.logB {spec : BinarySpec} (f : FloatBits spec) : Floa
 
 /-- IEEE-style quantize to the quantum determined by `y`.
     For binary formats here, the quantum is `ULP(y)`. -/
+noncomputable def FloatBits.quantizeResultWithTininess {spec : BinarySpec}
+    (x y : FloatBits spec) (mode : RoundingMode := .roundNearestTiesToEven)
+    (tininess : TininessDetectionMode := .beforeRounding) :
+    OpResult (FloatBits spec) :=
+  match x.classify, y.classify with
+  | .nan, _ => binaryNaNResult x y
+  | _, .nan => binaryNaNResult x y
+  | .infinite, .infinite => { value := x }
+  | .infinite, _ =>
+      { value := FloatBits.quietNaN spec, flags := { invalidOperation := true } }
+  | _, .infinite =>
+      { value := FloatBits.quietNaN spec, flags := { invalidOperation := true } }
+  | _, _ =>
+      let quantumExp := ulpExp spec y.expField.toNat
+      let quantum : ℝ := (2 : ℝ) ^ quantumExp
+      let scaled := x.toReal / quantum
+      let q : ℤ := roundToIntByMode mode scaled
+      let rounded := (q : ℝ) * quantum
+      let flags := {
+        inexact := inexactFlag x.toReal rounded
+        overflow := overflowFlag spec.toFormat rounded
+        underflow := underflowFlagWithTininess spec.toFormat tininess x.toReal rounded
+      }
+      { value := FloatBits.ofRealOrInfSigned spec rounded x.isNeg, flags := flags }
+
+/-- IEEE-style quantize to the quantum determined by `y`.
+    For binary formats here, the quantum is `ULP(y)`. -/
 noncomputable def FloatBits.quantizeResult {spec : BinarySpec}
     (x y : FloatBits spec) (mode : RoundingMode := .roundNearestTiesToEven) :
     OpResult (FloatBits spec) :=

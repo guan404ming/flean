@@ -14,3 +14,4 @@ import Flean.Core.SuccPred
 import Flean.Core.Sterbenz
 import Flean.Core.SatisfiesAny
 import Flean.Core.RoundOdd
+import Flean.Core.Decimal

@@ -94,6 +94,112 @@ theorem FloatBits.subnormal_significand_range {spec : BinarySpec} (f : FloatBits
   unfold toRepr; dsimp; rw [h_zero]; simp
   exact f.sigField.isLt
 
+theorem FloatBits.getExtendedSignificand_eq_toRepr_of_finite {spec : BinarySpec}
+    (f : FloatBits spec)
+    (hfin : f.classify = .normal ∨ f.classify = .subnormal) :
+    f.getExtendedSignificand.1.toNat = f.toRepr.significand ∧
+      f.getExtendedSignificand.2 = f.toRepr.exponent := by
+  rcases hfin with hnorm | hsub
+  · have hExpZero : f.isExpZero = false := by
+      unfold FloatBits.classify at hnorm
+      split_ifs at hnorm; simp_all
+    constructor
+    · unfold FloatBits.getExtendedSignificand FloatBits.toRepr
+      have hlt : f.sigField.toNat < 2 ^ spec.sigWidth := f.sigField.isLt
+      have hor :
+          (1 <<< spec.sigWidth) ||| f.sigField.toNat = f.sigField.toNat + 2 ^ spec.sigWidth := by
+        have hshift :
+            1 <<< spec.sigWidth + f.sigField.toNat =
+              (1 <<< spec.sigWidth) ||| f.sigField.toNat :=
+          Nat.shiftLeft_add_eq_or_of_lt (i := spec.sigWidth) (b := f.sigField.toNat) hlt 1
+        calc
+          (1 <<< spec.sigWidth) ||| f.sigField.toNat = 1 <<< spec.sigWidth + f.sigField.toNat := by
+            simpa using hshift.symm
+          _ = 2 ^ spec.sigWidth + f.sigField.toNat := by simp [Nat.one_shiftLeft]
+          _ = f.sigField.toNat + 2 ^ spec.sigWidth := by omega
+      simp [hExpZero, hor]
+    · unfold FloatBits.getExtendedSignificand FloatBits.toRepr
+      simp [hExpZero]
+  · have hExpZero : f.isExpZero = true := by
+      unfold FloatBits.classify at hsub
+      split_ifs at hsub; simp_all
+    constructor
+    · unfold FloatBits.getExtendedSignificand FloatBits.toRepr
+      simp [hExpZero]
+    · unfold FloatBits.getExtendedSignificand FloatBits.toRepr
+      simp [hExpZero]
+
+theorem FloatBits.toRepr_exponent_pos_of_finite {spec : BinarySpec} (f : FloatBits spec)
+    (hfin : f.classify = .normal ∨ f.classify = .subnormal) :
+    1 ≤ f.toRepr.exponent := by
+  rcases hfin with hnorm | hsub
+  · have h_nz : f.isExpZero = false := by
+      by_contra hb
+      simp only [Bool.not_eq_false] at hb
+      unfold FloatBits.classify at hnorm
+      simp only [hb, ite_true] at hnorm
+      split_ifs at hnorm
+    unfold FloatBits.toRepr
+    simp [h_nz]
+    have : f.expField ≠ 0 := by
+      intro hab
+      simp [FloatBits.isExpZero, hab] at h_nz
+    exact BitVec.toNat_pos_of_ne_zero this
+  · have h_z : f.isExpZero = true := by
+      unfold FloatBits.classify at hsub
+      split_ifs at hsub; simp_all
+    unfold FloatBits.toRepr
+    simp [h_z]
+
+theorem FloatBits.toRepr_exponent_eq_one_of_subnormal {spec : BinarySpec} (f : FloatBits spec)
+    (hsub : f.classify = .subnormal) :
+    f.toRepr.exponent = 1 := by
+  have h_z : f.isExpZero = true := by
+    unfold FloatBits.classify at hsub
+    split_ifs at hsub; simp_all
+  unfold FloatBits.toRepr
+  simp [h_z]
+
+theorem FloatBits.significand_lt_two_pow_succ_of_finite {spec : BinarySpec} (f : FloatBits spec)
+    (hfin : f.classify = .normal ∨ f.classify = .subnormal) :
+    f.toRepr.significand < 2 ^ (spec.sigWidth + 1) := by
+  rcases hfin with hnorm | hsub
+  · exact (f.normal_significand_range hnorm).2
+  · have hsub' := f.subnormal_significand_range hsub
+    have := spec.hSig
+    omega
+
+theorem FloatBits.toRepr_sign_pos_iff_isNeg_false {spec : BinarySpec} (f : FloatBits spec) :
+    (f.toRepr.sign = .pos ↔ f.isNeg = false) := by
+  unfold FloatBits.toRepr FloatBits.sign FloatBits.isNeg
+  by_cases h : f.signBit = 0 <;> simp [h]
+
+theorem FloatBits.toRepr_sign_neg_iff_isNeg_true {spec : BinarySpec} (f : FloatBits spec) :
+    (f.toRepr.sign = .neg ↔ f.isNeg = true) := by
+  unfold FloatBits.toRepr FloatBits.sign FloatBits.isNeg
+  by_cases h : f.signBit = 0 <;> simp [h]
+
+theorem FloatBits.toRepr_sign_toInt_of_isNeg {spec : BinarySpec} (f : FloatBits spec) :
+    f.toRepr.sign.toInt = if f.isNeg then (-1 : Int) else 1 := by
+  by_cases hneg : f.isNeg = true
+  · have hs : f.toRepr.sign = .neg := (FloatBits.toRepr_sign_neg_iff_isNeg_true f).2 hneg
+    simp [hneg, hs, Sign.toInt]
+  · have hnegf : f.isNeg = false := by
+      cases h : f.isNeg <;> simp_all
+    have hs : f.toRepr.sign = .pos := (FloatBits.toRepr_sign_pos_iff_isNeg_false f).2 hnegf
+    simp [hnegf, hs, Sign.toInt]
+
+theorem FloatBits.toReal_eq_toRepr_of_finite {spec : BinarySpec} (f : FloatBits spec)
+    (hfin : f.classify = .normal ∨ f.classify = .subnormal) :
+    f.toReal = (f.toRepr.sign.toInt : ℝ) * (f.toRepr.significand : ℝ) *
+      (2 : ℝ) ^ ((f.toRepr.exponent : ℤ) - (spec.bias : ℤ) - spec.sigWidth) := by
+  simp only [FloatBits.toReal]
+  rcases hfin with hnorm | hsub
+  · rw [hnorm]
+    norm_cast
+  · rw [hsub]
+    norm_cast
+
 /-! ## Bridge: toReal is representable -/
 
 /-- The real value of any finite non-zero FloatBits is representable in its format. -/

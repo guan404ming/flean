@@ -19,6 +19,24 @@ theorem minNumResultSpec_correct {spec : BinarySpec} (a b : FloatBits spec) :
 theorem maxNumResultSpec_correct {spec : BinarySpec} (a b : FloatBits spec) :
     a.maxNumResult b = maxNumResultSpec a b := rfl
 
+theorem minNumMagResultSpec_correct {spec : BinarySpec} (a b : FloatBits spec) :
+    a.minNumMagResult b = minNumMagResultSpec a b := rfl
+
+theorem maxNumMagResultSpec_correct {spec : BinarySpec} (a b : FloatBits spec) :
+    a.maxNumMagResult b = maxNumMagResultSpec a b := rfl
+
+theorem minimumResultSpec_correct {spec : BinarySpec} (a b : FloatBits spec) :
+    a.minimumResult b = minimumResultSpec a b := rfl
+
+theorem maximumResultSpec_correct {spec : BinarySpec} (a b : FloatBits spec) :
+    a.maximumResult b = maximumResultSpec a b := rfl
+
+theorem minimumMagnitudeResultSpec_correct {spec : BinarySpec} (a b : FloatBits spec) :
+    a.minimumMagnitudeResult b = minimumMagnitudeResultSpec a b := rfl
+
+theorem maximumMagnitudeResultSpec_correct {spec : BinarySpec} (a b : FloatBits spec) :
+    a.maximumMagnitudeResult b = maximumMagnitudeResultSpec a b := rfl
+
 theorem eqResult_nan_value_false {spec : BinarySpec} (a b : FloatBits spec)
     (h : a.classify = .nan ∨ b.classify = .nan) :
     (a.eqResult b).value = false := by
@@ -76,5 +94,53 @@ theorem maxNumResult_nan_right {spec : BinarySpec} (a b : FloatBits spec)
     (a.maxNumResult b).value = a ∧
     (a.maxNumResult b).flags.invalidOperation = b.isSignalingNaN := by
   simp [FloatBits.maxNumResult, ha, hb]
+
+theorem minNumMagResult_nan_left {spec : BinarySpec} (a b : FloatBits spec)
+    (ha : a.classify = .nan) :
+    (a.minNumMagResult b).value = b ∧
+    (a.minNumMagResult b).flags.invalidOperation = a.isSignalingNaN := by
+  simp [FloatBits.minNumMagResult, ha]
+
+theorem minNumMagResult_nan_right {spec : BinarySpec} (a b : FloatBits spec)
+    (ha : a.classify ≠ .nan) (hb : b.classify = .nan) :
+    (a.minNumMagResult b).value = a ∧
+    (a.minNumMagResult b).flags.invalidOperation = b.isSignalingNaN := by
+  simp [FloatBits.minNumMagResult, ha, hb]
+
+theorem maxNumMagResult_nan_left {spec : BinarySpec} (a b : FloatBits spec)
+    (ha : a.classify = .nan) :
+    (a.maxNumMagResult b).value = b ∧
+    (a.maxNumMagResult b).flags.invalidOperation = a.isSignalingNaN := by
+  simp [FloatBits.maxNumMagResult, ha]
+
+theorem maxNumMagResult_nan_right {spec : BinarySpec} (a b : FloatBits spec)
+    (ha : a.classify ≠ .nan) (hb : b.classify = .nan) :
+    (a.maxNumMagResult b).value = a ∧
+    (a.maxNumMagResult b).flags.invalidOperation = b.isSignalingNaN := by
+  simp [FloatBits.maxNumMagResult, ha, hb]
+
+theorem minimumResult_nan_invalid_flag {spec : BinarySpec} (a b : FloatBits spec)
+    (h : a.classify = .nan ∨ b.classify = .nan) :
+    (a.minimumResult b).flags.invalidOperation = (a.isSignalingNaN || b.isSignalingNaN) := by
+  rcases h with ha | hb
+  · simp [FloatBits.minimumResult, FloatBits.minimumResultWithNaNPolicy,
+      propagateNaNResultWithPolicy, ha]
+  · by_cases ha : a.classify = .nan
+    · simp [FloatBits.minimumResult, FloatBits.minimumResultWithNaNPolicy,
+        propagateNaNResultWithPolicy, ha]
+    · simp [FloatBits.minimumResult, FloatBits.minimumResultWithNaNPolicy,
+        propagateNaNResultWithPolicy, ha, hb]
+
+theorem maximumResult_nan_invalid_flag {spec : BinarySpec} (a b : FloatBits spec)
+    (h : a.classify = .nan ∨ b.classify = .nan) :
+    (a.maximumResult b).flags.invalidOperation = (a.isSignalingNaN || b.isSignalingNaN) := by
+  rcases h with ha | hb
+  · simp [FloatBits.maximumResult, FloatBits.maximumResultWithNaNPolicy,
+      propagateNaNResultWithPolicy, ha]
+  · by_cases ha : a.classify = .nan
+    · simp [FloatBits.maximumResult, FloatBits.maximumResultWithNaNPolicy,
+        propagateNaNResultWithPolicy, ha]
+    · simp [FloatBits.maximumResult, FloatBits.maximumResultWithNaNPolicy,
+        propagateNaNResultWithPolicy, ha, hb]
 
 end Flean

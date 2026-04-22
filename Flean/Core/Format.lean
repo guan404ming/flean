@@ -74,6 +74,36 @@ def binary128 : FloatFormat where
   hprec := by omega
   hexp := by omega
 
+/-- IEEE 754 decimal32: radix-10 with precision 7 and exponent range [-95, 96]. -/
+def decimal32 : FloatFormat where
+  β := 10
+  prec := 7
+  emin := -95
+  emax := 96
+  hβ := by omega
+  hprec := by omega
+  hexp := by omega
+
+/-- IEEE 754 decimal64: radix-10 with precision 16 and exponent range [-383, 384]. -/
+def decimal64 : FloatFormat where
+  β := 10
+  prec := 16
+  emin := -383
+  emax := 384
+  hβ := by omega
+  hprec := by omega
+  hexp := by omega
+
+/-- IEEE 754 decimal128: radix-10 with precision 34 and exponent range [-6143, 6144]. -/
+def decimal128 : FloatFormat where
+  β := 10
+  prec := 34
+  emin := -6143
+  emax := 6144
+  hβ := by omega
+  hprec := by omega
+  hexp := by omega
+
 /-- Classification of floating-point number categories per IEEE 754. -/
 inductive FloatClass where
   | normal

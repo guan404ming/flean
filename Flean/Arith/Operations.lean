@@ -23,6 +23,25 @@ noncomputable def overflowFlag (fmt : FloatFormat) (exact : ℝ) : Bool := by
   classical
   exact decide (maxFinite fmt < |exact|)
 
+/-- Tininess check based on the exact (pre-rounding) result. -/
+noncomputable def tinyBeforeRoundingFlag (fmt : FloatFormat) (exact : ℝ) : Bool := by
+  classical
+  exact decide (exact ≠ 0 ∧ |exact| < minNormal fmt)
+
+/-- Tininess check based on the rounded (post-rounding) result. -/
+noncomputable def tinyAfterRoundingFlag (fmt : FloatFormat) (rounded : ℝ) : Bool := by
+  classical
+  exact decide (|rounded| < minNormal fmt)
+
+/-- Underflow flag with configurable tininess detection point. -/
+noncomputable def underflowFlagWithTininess
+    (fmt : FloatFormat) (tininess : TininessDetectionMode) (exact rounded : ℝ) : Bool := by
+  classical
+  exact decide (rounded ≠ exact ∧
+    match tininess with
+    | .beforeRounding => exact ≠ 0 ∧ |exact| < minNormal fmt
+    | .afterRounding => |rounded| < minNormal fmt)
+
 noncomputable def underflowFlag (fmt : FloatFormat) (exact rounded : ℝ) : Bool := by
   classical
   exact decide (rounded ≠ exact ∧ exact ≠ 0 ∧ |exact| < minNormal fmt)
@@ -40,6 +59,31 @@ def mulZeroSign {spec : BinarySpec} (a b : FloatBits spec) : Bool :=
 
 def unaryNaNResult {spec : BinarySpec} (a : FloatBits spec) : OpResult (FloatBits spec) :=
   { value := a.quietedNaN, flags := { invalidOperation := a.isSignalingNaN } }
+
+/-- Select which NaN payload source to use for a binary NaN result. -/
+def chooseNaNOperand {spec : BinarySpec}
+    (policy : NaNPropagationPolicy) (a b : FloatBits spec) : FloatBits spec :=
+  match policy with
+  | .preferLeft => a
+  | .preferRight => b
+  | .preferLargerPayload =>
+      if a.nanPayload.toNat ≥ b.nanPayload.toNat then a else b
+
+/-- Binary NaN result with configurable payload-selection policy. -/
+def binaryNaNResultWithPolicy {spec : BinarySpec}
+    (policy : NaNPropagationPolicy) (a b : FloatBits spec) : OpResult (FloatBits spec) :=
+  if a.classify == .nan || b.classify == .nan then
+    let picked :=
+      if a.classify == .nan && b.classify == .nan then
+        chooseNaNOperand policy a b
+      else if a.classify == .nan then
+        a
+      else
+        b
+    { value := picked.quietedNaN
+      flags := { invalidOperation := a.isSignalingNaN || b.isSignalingNaN } }
+  else
+    { value := FloatBits.quietNaN spec }
 
 def binaryNaNResult {spec : BinarySpec} (a b : FloatBits spec) : OpResult (FloatBits spec) :=
   if a.classify == .nan then

@@ -30,6 +30,23 @@ noncomputable def castSpec (srcFmt dstFmt : FloatFormat) (mode : RoundingMode) (
   round dstFmt mode x
 
 /-- Spec-level exception flags for a rounded finite result. -/
+noncomputable def roundedFlagsSpecWithTininess
+    (fmt : FloatFormat) (tininess : TininessDetectionMode) (exact rounded : ℝ) : ExceptionFlags :=
+  { inexact := by
+      classical
+      exact decide (exact ≠ rounded)
+    overflow := by
+      classical
+      exact decide (maxFinite fmt < |exact|)
+    underflow := by
+      classical
+      exact decide (rounded ≠ exact ∧
+        match tininess with
+        | .beforeRounding => exact ≠ 0 ∧ |exact| < minNormal fmt
+        | .afterRounding => |rounded| < minNormal fmt) }
+
+/-- Spec-level exception flags for a rounded finite result.
+    Uses tininess detection before rounding for backward compatibility. -/
 noncomputable def roundedFlagsSpec (fmt : FloatFormat) (exact rounded : ℝ) : ExceptionFlags :=
   { inexact := by
       classical
@@ -40,6 +57,54 @@ noncomputable def roundedFlagsSpec (fmt : FloatFormat) (exact rounded : ℝ) : E
     underflow := by
       classical
       exact decide (rounded ≠ exact ∧ exact ≠ 0 ∧ |exact| < minNormal fmt) }
+
+/-- Spec-level flags for addition with configurable tininess mode. -/
+noncomputable def addFlagsSpecWithTininess
+    (fmt : FloatFormat) (tininess : TininessDetectionMode)
+    (mode : RoundingMode) (a b : ℝ) : ExceptionFlags :=
+  let exact := a + b
+  let rounded := addSpec fmt mode a b
+  roundedFlagsSpecWithTininess fmt tininess exact rounded
+
+/-- Spec-level flags for multiplication with configurable tininess mode. -/
+noncomputable def mulFlagsSpecWithTininess
+    (fmt : FloatFormat) (tininess : TininessDetectionMode)
+    (mode : RoundingMode) (a b : ℝ) : ExceptionFlags :=
+  let exact := a * b
+  let rounded := mulSpec fmt mode a b
+  roundedFlagsSpecWithTininess fmt tininess exact rounded
+
+/-- Spec-level flags for division with configurable tininess mode. -/
+noncomputable def divFlagsSpecWithTininess
+    (fmt : FloatFormat) (tininess : TininessDetectionMode)
+    (mode : RoundingMode) (a b : ℝ) : ExceptionFlags :=
+  let exact := a / b
+  let rounded := divSpec fmt mode a b
+  roundedFlagsSpecWithTininess fmt tininess exact rounded
+
+/-- Spec-level flags for square root with configurable tininess mode. -/
+noncomputable def sqrtFlagsSpecWithTininess
+    (fmt : FloatFormat) (tininess : TininessDetectionMode)
+    (mode : RoundingMode) (a : ℝ) : ExceptionFlags :=
+  let exact := Real.sqrt a
+  let rounded := sqrtSpec fmt mode a
+  roundedFlagsSpecWithTininess fmt tininess exact rounded
+
+/-- Spec-level flags for fused multiply-add with configurable tininess mode. -/
+noncomputable def fmaFlagsSpecWithTininess
+    (fmt : FloatFormat) (tininess : TininessDetectionMode)
+    (mode : RoundingMode) (a b c : ℝ) : ExceptionFlags :=
+  let exact := a * b + c
+  let rounded := fmaSpec fmt mode a b c
+  roundedFlagsSpecWithTininess fmt tininess exact rounded
+
+/-- Spec-level flags for cast with configurable tininess mode. -/
+noncomputable def castFlagsSpecWithTininess
+    (srcFmt dstFmt : FloatFormat) (tininess : TininessDetectionMode)
+    (mode : RoundingMode) (x : ℝ) : ExceptionFlags :=
+  let _ := srcFmt
+  let rounded := castSpec srcFmt dstFmt mode x
+  roundedFlagsSpecWithTininess dstFmt tininess x rounded
 
 /-- Spec-level flags for addition. -/
 noncomputable def addFlagsSpec (fmt : FloatFormat) (mode : RoundingMode) (a b : ℝ) : ExceptionFlags :=
@@ -96,5 +161,29 @@ def minNumResultSpec {spec : BinarySpec} (a b : FloatBits spec) : OpResult (Floa
 /-- Spec-level IEEE maximumNumber result. -/
 def maxNumResultSpec {spec : BinarySpec} (a b : FloatBits spec) : OpResult (FloatBits spec) :=
   a.maxNumResult b
+
+/-- Spec-level IEEE minimumNumberMagnitude result. -/
+def minNumMagResultSpec {spec : BinarySpec} (a b : FloatBits spec) : OpResult (FloatBits spec) :=
+  a.minNumMagResult b
+
+/-- Spec-level IEEE maximumNumberMagnitude result. -/
+def maxNumMagResultSpec {spec : BinarySpec} (a b : FloatBits spec) : OpResult (FloatBits spec) :=
+  a.maxNumMagResult b
+
+/-- Spec-level IEEE minimum result. -/
+def minimumResultSpec {spec : BinarySpec} (a b : FloatBits spec) : OpResult (FloatBits spec) :=
+  a.minimumResult b
+
+/-- Spec-level IEEE maximum result. -/
+def maximumResultSpec {spec : BinarySpec} (a b : FloatBits spec) : OpResult (FloatBits spec) :=
+  a.maximumResult b
+
+/-- Spec-level IEEE minimumMagnitude result. -/
+def minimumMagnitudeResultSpec {spec : BinarySpec} (a b : FloatBits spec) : OpResult (FloatBits spec) :=
+  a.minimumMagnitudeResult b
+
+/-- Spec-level IEEE maximumMagnitude result. -/
+def maximumMagnitudeResultSpec {spec : BinarySpec} (a b : FloatBits spec) : OpResult (FloatBits spec) :=
+  a.maximumMagnitudeResult b
 
 end Flean

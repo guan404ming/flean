@@ -18,6 +18,19 @@ inductive ExceptionFlag where
   | inexact
   deriving DecidableEq, Repr
 
+/-- IEEE 754 tininess-detection mode for underflow signaling. -/
+inductive TininessDetectionMode where
+  | beforeRounding
+  | afterRounding
+  deriving DecidableEq, Repr
+
+/-- NaN-result selection policy for binary operations when both operands are NaN. -/
+inductive NaNPropagationPolicy where
+  | preferLeft
+  | preferRight
+  | preferLargerPayload
+  deriving DecidableEq, Repr
+
 /-- A set of raised exception flags, represented as a record of booleans. -/
 structure ExceptionFlags where
   invalidOperation : Bool := false

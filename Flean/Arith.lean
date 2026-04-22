@@ -9,4 +9,6 @@ import Flean.Arith.RoundingHelper
 import Flean.Arith.Conversions
 import Flean.Arith.RoundToIntegral
 import Flean.Arith.Predicates
+import Flean.Arith.Environment
+import Flean.Arith.Conformance
 import Flean.Arith.Correctness
