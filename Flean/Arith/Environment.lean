@@ -145,3 +145,14 @@ noncomputable def compareLeExec {spec : BinarySpec}
 end FloatBits
 
 end Flean
+
+-- AUTO_AXIOM_CHECK_MARKER_DO_NOT_COMMIT
+#print axioms Flean.TrapEnables
+#print axioms Flean.FPEnv
+#print axioms Flean.FPState
+#print axioms Flean.RuntimeResult
+#print axioms Flean.FPState.raise
+#print axioms Flean.ExceptionFlags.trapMask
+#print axioms Flean.RuntimeResult.ok
+#print axioms Flean.RuntimeResult.trap
+#print axioms Flean.execWithEnv

@@ -109,6 +109,115 @@ theorem roundedExp_pos_of_minNormal_le (fmt : FloatFormat) {x : ℝ}
   rw [hfix] at hmono
   exact lt_of_lt_of_le hmin_pos hmono
 
+/-- If `Real.exp x` is strictly below half the smallest representable positive value,
+    rounded exp flushes to zero under round-to-nearest-even. This is the underflow
+    characterization needed to derive tight FP8 `max_offset` bounds, complementing
+    `roundedExp_pos_of_minNormal_le` on the no-underflow side. -/
+theorem roundedExp_eq_zero_of_lt_half_minNormal (fmt : FloatFormat) {x : ℝ}
+    (hsmall : Real.exp x < minNormal fmt / 2) :
+    roundedExp fmt x = 0 := by
+  unfold roundedExp roundNNE
+  dsimp only
+  have hexp_pos : 0 < Real.exp x := Real.exp_pos x
+  have hexp_ne : Real.exp x ≠ 0 := ne_of_gt hexp_pos
+  have hmin_eq_bpow : minNormal fmt = bpow fmt fmt.emin := rfl
+  have hbpow_pos : 0 < bpow fmt fmt.emin := bpow_pos fmt _
+  have hexp_lt_min : Real.exp x < bpow fmt fmt.emin := by
+    rw [← hmin_eq_bpow]; linarith
+  have hcexp_le : cexp fmt (Real.exp x) ≤ fmt.emin := by
+    unfold cexp
+    rw [if_neg hexp_ne]
+    refine max_le (le_refl _) ?_
+    have hlogβ : 0 < Real.log (fmt.β : ℝ) := Real.log_pos fmt.β_one_lt
+    have hexp_abs : |Real.exp x| = Real.exp x := abs_of_pos hexp_pos
+    rw [hexp_abs]
+    have hlog_le : Real.log (Real.exp x) ≤ Real.log (bpow fmt fmt.emin) :=
+      Real.log_le_log hexp_pos (le_of_lt hexp_lt_min)
+    have hlog_bpow : Real.log (bpow fmt fmt.emin) =
+        (fmt.emin : ℝ) * Real.log (fmt.β : ℝ) := by
+      unfold bpow; exact Real.log_zpow _ _
+    rw [hlog_bpow] at hlog_le
+    have hdiv : Real.log (Real.exp x) / Real.log (fmt.β : ℝ) ≤ (fmt.emin : ℝ) := by
+      rw [div_le_iff₀ hlogβ]; linarith
+    have hfloor_cmp : ⌊Real.log (Real.exp x) / Real.log (fmt.β : ℝ)⌋ ≤
+        ⌊((fmt.emin : ℤ) : ℝ)⌋ := Int.floor_le_floor hdiv
+    rw [Int.floor_intCast] at hfloor_cmp
+    have hprec : (1 : ℤ) ≤ fmt.prec := by exact_mod_cast fmt.hprec
+    omega
+  have hcexp_ge : fmt.emin ≤ cexp fmt (Real.exp x) := cexp_emin_le fmt _
+  have hcexp_eq : cexp fmt (Real.exp x) = fmt.emin := le_antisymm hcexp_le hcexp_ge
+  rw [hcexp_eq]
+  set q := Real.exp x / bpow fmt fmt.emin with hq_def
+  have hq_pos : 0 < q := div_pos hexp_pos hbpow_pos
+  have hq_lt_half : q < 1 / 2 := by
+    rw [hq_def, div_lt_iff₀ hbpow_pos]
+    rw [← hmin_eq_bpow]; linarith
+  have hfloor_q : ⌊q⌋ = 0 :=
+    Int.floor_eq_zero_iff.mpr ⟨hq_pos.le, by linarith⟩
+  have hround_q_zero : roundNearestEven q = 0 := by
+    unfold roundNearestEven
+    dsimp only
+    rw [hfloor_q]
+    have hfrac : q - ((0 : ℤ) : ℝ) = q := by push_cast; ring
+    rw [hfrac, if_pos hq_lt_half]
+  rw [hround_q_zero]
+  push_cast
+  ring
+
+/-- Shifted form of the underflow lemma, aligned with FA-3 / FlashInfer online softmax:
+    given a running max shift `m` and a pre-exp offset `k` (the analogue of FA-3's
+    `max_offset`), any logit whose shifted value `x - m + k` is strictly below
+    `log(minNormal / 2)` rounds to zero. -/
+theorem roundedExp_shifted_eq_zero_of_logit_lt_log_half_minNormal
+    (fmt : FloatFormat) {x m k : ℝ}
+    (hsmall : x - m + k < Real.log (minNormal fmt / 2)) :
+    roundedExp fmt (x - m + k) = 0 := by
+  apply roundedExp_eq_zero_of_lt_half_minNormal
+  have hmin_pos : 0 < minNormal fmt := zpow_pos fmt.β_pos _
+  have hhalf_pos : 0 < minNormal fmt / 2 := by linarith
+  calc Real.exp (x - m + k)
+      < Real.exp (Real.log (minNormal fmt / 2)) := Real.exp_lt_exp.mpr hsmall
+    _ = minNormal fmt / 2 := Real.exp_log hhalf_pos
+
+/-- Safety direction for block-level offset choice: if the pre-exp offset `k` dominates
+    the worst-case logit drop `Δ` enough that `log(minNormal) ≤ k - Δ`, every entry in
+    the block rounds to a strictly positive value (no underflow). This is the target
+    certificate an FP8 attention kernel wants from a verified `max_offset` choice. -/
+theorem roundedExp_shifted_pos_of_logit_above_minNormal
+    (fmt : FloatFormat) {m k Δ : ℝ} {xs : List ℝ}
+    (hbound : ∀ x ∈ xs, m - Δ ≤ x)
+    (hsafe : Real.log (minNormal fmt) ≤ k - Δ)
+    {x : ℝ} (hx : x ∈ xs) :
+    0 < roundedExp fmt (x - m + k) := by
+  apply roundedExp_pos_of_minNormal_le
+  have hmin_pos : 0 < minNormal fmt := zpow_pos fmt.β_pos _
+  have hlog_le : Real.log (minNormal fmt) ≤ x - m + k := by
+    have := hbound x hx; linarith
+  calc minNormal fmt
+      = Real.exp (Real.log (minNormal fmt)) := (Real.exp_log hmin_pos).symm
+    _ ≤ Real.exp (x - m + k) := Real.exp_le_exp.mpr hlog_le
+
+/-- Block-level no-underflow certificate: under the same safety condition as
+    `roundedExp_shifted_pos_of_logit_above_minNormal`, no entry in the block flushes
+    to zero. -/
+theorem roundedShiftedExp_no_underflow_of_safe_offset
+    (fmt : FloatFormat) {m k Δ : ℝ} {xs : List ℝ}
+    (hbound : ∀ x ∈ xs, m - Δ ≤ x)
+    (hsafe : Real.log (minNormal fmt) ≤ k - Δ) :
+    ∀ x ∈ xs, roundedExp fmt (x - m + k) ≠ 0 := by
+  intro x hx
+  exact ne_of_gt (roundedExp_shifted_pos_of_logit_above_minNormal fmt hbound hsafe hx)
+
+/-- Dual direction: if some logit falls in the underflow regime, that entry definitely
+    rounds to zero. Used to lower-bound the information lost when `k` is chosen too
+    aggressively. -/
+theorem roundedShiftedExp_some_underflow_of_logit_tail
+    (fmt : FloatFormat) {m k : ℝ} {xs : List ℝ}
+    (htail : ∃ x ∈ xs, x - m + k < Real.log (minNormal fmt / 2)) :
+    ∃ x ∈ xs, roundedExp fmt (x - m + k) = 0 := by
+  obtain ⟨x, hx, hlow⟩ := htail
+  exact ⟨x, hx, roundedExp_shifted_eq_zero_of_logit_lt_log_half_minNormal fmt hlow⟩
+
 theorem roundedExp_le_one_plus_error (fmt : FloatFormat) {x : ℝ}
     (hx : x ≤ 0) :
     roundedExp fmt x ≤ 1 + bpow fmt (cexp fmt (Real.exp x)) / 2 := by

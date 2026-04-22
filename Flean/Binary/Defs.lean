@@ -60,6 +60,24 @@ def binarySpec128 : BinarySpec where
   hExp := by omega
   hSig := by omega
 
+/-- OCP FP8 E4M3 spec: 4-bit exponent, 3-bit significand, bias 7.
+    Note: the `.toFormat` view uses IEEE-style emax = bias = 7, which under-counts the
+    OCP FN convention (emax = 8, max finite = 448) by one. Underflow analysis at the
+    low end is unaffected: smallest representable = 2^(-9) = 1/512. -/
+def binarySpec8_e4m3 : BinarySpec where
+  expWidth := 4
+  sigWidth := 3
+  hExp := by omega
+  hSig := by omega
+
+/-- OCP FP8 E5M2 spec: 5-bit exponent, 2-bit significand, bias 15.
+    IEEE-style semantics: emax = 15, max finite = 57344, smallest subnormal = 2^(-16). -/
+def binarySpec8_e5m2 : BinarySpec where
+  expWidth := 5
+  sigWidth := 2
+  hExp := by omega
+  hSig := by omega
+
 /-- A packed IEEE 754 floating-point value as a bit vector. -/
 structure FloatBits (spec : BinarySpec) where
   /-- The raw bit representation. -/

@@ -696,4 +696,44 @@ theorem FloatBits.ofRealOrInfSigned_classify_of_not_isBitRepresentable
   · simpa [FloatBits.ofRealOrInfSigned, hx, hneg] using
       (FloatBits.fromFields_classify_infinite (spec := spec) (s := (0 : BitVec 1)))
 
+/-! ## FP8 concrete underflow thresholds -/
+
+theorem emin_binarySpec8_e4m3 :
+    binarySpec8_e4m3.toFormat.emin = (-9 : ℤ) := by
+  unfold BinarySpec.toFormat binarySpec8_e4m3 BinarySpec.bias
+  decide
+
+theorem emin_binarySpec8_e5m2 :
+    binarySpec8_e5m2.toFormat.emin = (-16 : ℤ) := by
+  unfold BinarySpec.toFormat binarySpec8_e5m2 BinarySpec.bias
+  decide
+
+theorem minNormal_binarySpec8_e4m3 :
+    minNormal binarySpec8_e4m3.toFormat = (2 : ℝ) ^ (-9 : ℤ) := by
+  unfold minNormal
+  rw [emin_binarySpec8_e4m3]
+  rfl
+
+theorem minNormal_binarySpec8_e5m2 :
+    minNormal binarySpec8_e5m2.toFormat = (2 : ℝ) ^ (-16 : ℤ) := by
+  unfold minNormal
+  rw [emin_binarySpec8_e5m2]
+  rfl
+
+/-- FP8 E4M3 underflow threshold: `exp` values strictly below `2^(-10)` flush to zero. -/
+theorem halfMinNormal_binarySpec8_e4m3 :
+    minNormal binarySpec8_e4m3.toFormat / 2 = (2 : ℝ) ^ (-10 : ℤ) := by
+  rw [minNormal_binarySpec8_e4m3]
+  have h : (2 : ℝ) ^ (-9 : ℤ) = (2 : ℝ) ^ (-10 : ℤ) * 2 := by
+    rw [show (-9 : ℤ) = -10 + 1 from rfl, zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_one]
+  rw [h]; ring
+
+/-- FP8 E5M2 underflow threshold: `exp` values strictly below `2^(-17)` flush to zero. -/
+theorem halfMinNormal_binarySpec8_e5m2 :
+    minNormal binarySpec8_e5m2.toFormat / 2 = (2 : ℝ) ^ (-17 : ℤ) := by
+  rw [minNormal_binarySpec8_e5m2]
+  have h : (2 : ℝ) ^ (-16 : ℤ) = (2 : ℝ) ^ (-17 : ℤ) * 2 := by
+    rw [show (-16 : ℤ) = -17 + 1 from rfl, zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_one]
+  rw [h]; ring
+
 end Flean
