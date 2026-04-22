@@ -284,4 +284,56 @@ theorem softmax_entry_times_provable_p_scale_le_maxFinite
         exact mul_nonneg hmax_pos.le hden_pos.le
     _ = maxFinite fmt := by field_simp
 
+/-! ## Online LSE: block-wise merging equivalent to a static reference max
+
+These lemmas establish that FA-3 / FlashInfer's online softmax recurrence
+(incremental `(m, l)` update when a new block arrives) computes the same
+`(max, shifted-sum)` pair as the static-shift formulation used in `StableLogSumExp`.
+-/
+
+/-- Rescaling: multiplying `expShiftSum m₁ xs` by `exp(m₁ - m₂)` reshifts the sum's
+    reference from `m₁` to `m₂`. -/
+theorem expShiftSum_rescale (m₁ m₂ : ℝ) (xs : List ℝ) :
+    expShiftSum m₁ xs * Real.exp (m₁ - m₂) = expShiftSum m₂ xs := by
+  induction xs with
+  | nil => simp [expShiftSum_nil]
+  | cons y ys ih =>
+    rw [expShiftSum_cons, expShiftSum_cons]
+    have hy : Real.exp (y - m₁) * Real.exp (m₁ - m₂) = Real.exp (y - m₂) := by
+      rw [← Real.exp_add]; congr 1; ring
+    have hdist : (Real.exp (y - m₁) + expShiftSum m₁ ys) * Real.exp (m₁ - m₂) =
+        Real.exp (y - m₁) * Real.exp (m₁ - m₂) +
+          expShiftSum m₁ ys * Real.exp (m₁ - m₂) := by ring
+    rw [hdist, hy, ih]
+
+/-- `expShiftSum` is additive over list concatenation. -/
+theorem expShiftSum_append (m : ℝ) (xs ys : List ℝ) :
+    expShiftSum m (xs ++ ys) = expShiftSum m xs + expShiftSum m ys := by
+  unfold expShiftSum
+  rw [List.map_append, List.sum_append]
+
+/-- Scalar merge identity: the online LSE update combines two per-block
+    shifted sums at a new common max, exactly matching the shifted sum of the
+    concatenated input evaluated at that max. -/
+theorem onlineLSE_merge_scalar (m₁ m₂ : ℝ) (xs₁ xs₂ : List ℝ) :
+    expShiftSum m₁ xs₁ * Real.exp (m₁ - max m₁ m₂) +
+        expShiftSum m₂ xs₂ * Real.exp (m₂ - max m₁ m₂) =
+      expShiftSum (max m₁ m₂) (xs₁ ++ xs₂) := by
+  rw [expShiftSum_append, expShiftSum_rescale, expShiftSum_rescale]
+
+/-- Online LSE merge step: given two blocks' `(max, shifted-sum)` pairs, produce
+    the combined pair. Matches the structure of FA-3's `softmax.update` and
+    FlashInfer's `OnlineSoftmax::update`. -/
+noncomputable def onlineLSEMerge (s₁ s₂ : ℝ × ℝ) : ℝ × ℝ :=
+  let m := max s₁.1 s₂.1
+  (m, s₁.2 * Real.exp (s₁.1 - m) + s₂.2 * Real.exp (s₂.1 - m))
+
+/-- Online ↔ static equivalence: merging per-block states via `onlineLSEMerge`
+    equals taking the joint max and evaluating `expShiftSum` over the concatenated
+    block. This is the invariance licensing the online recurrence. -/
+theorem onlineLSEMerge_correct (m₁ m₂ : ℝ) (xs₁ xs₂ : List ℝ) :
+    onlineLSEMerge (m₁, expShiftSum m₁ xs₁) (m₂, expShiftSum m₂ xs₂) =
+      (max m₁ m₂, expShiftSum (max m₁ m₂) (xs₁ ++ xs₂)) := by
+  simp only [onlineLSEMerge, onlineLSE_merge_scalar]
+
 end Flean
