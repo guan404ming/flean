@@ -298,15 +298,115 @@ linear (non-exp) dependence central to the anisotropy theorem.
 noncomputable def softmaxEntry (m : ℝ) (xs : List ℝ) (x : ℝ) : ℝ :=
   Real.exp (x - m) / expShiftSum m xs
 
+/-- If `x ∈ xs`, then `exp(x - m)` is one of the terms in `expShiftSum m xs`,
+    so it is bounded by the full sum. -/
+private theorem exp_shift_mem_le_expShiftSum {m x : ℝ} {xs : List ℝ} (hx : x ∈ xs) :
+    Real.exp (x - m) ≤ expShiftSum m xs := by
+  induction xs with
+  | nil => exact absurd hx (List.not_mem_nil)
+  | cons y ys ih =>
+    rw [expShiftSum_cons]
+    simp only [List.mem_cons] at hx
+    rcases hx with rfl | hmem
+    · linarith [expShiftSum_nonneg m ys]
+    · have h1 : Real.exp (x - m) ≤ expShiftSum m ys := ih hmem
+      have h2 : 0 ≤ Real.exp (y - m) := (Real.exp_pos _).le
+      linarith
+
+/-- Upper bound on `expShiftSum` over a perturbed list: each perturbation
+    `δᵢ` inflates its term by at most `Real.exp ε`. -/
+private theorem expShiftSum_zipWith_le_mul_exp
+    {m ε : ℝ} {xs deltas : List ℝ}
+    (hlen : xs.length = deltas.length)
+    (hbound : ∀ d ∈ deltas, |d| ≤ ε) :
+    expShiftSum m (xs.zipWith (· + ·) deltas) ≤ Real.exp ε * expShiftSum m xs := by
+  induction xs generalizing deltas with
+  | nil =>
+    simp [expShiftSum_nil, List.zipWith]
+  | cons y ys ih =>
+    cases deltas with
+    | nil => simp at hlen
+    | cons d ds =>
+      simp only [List.zipWith_cons_cons, expShiftSum_cons]
+      have hlen' : ys.length = ds.length := by
+        simpa [List.length_cons] using hlen
+      have hbound_tail : ∀ b ∈ ds, |b| ≤ ε := fun b hb =>
+        hbound b (List.mem_cons_of_mem _ hb)
+      have htail := ih hlen' hbound_tail
+      have hd : |d| ≤ ε := hbound d (List.mem_cons_self)
+      have hd_le : d ≤ ε := le_of_abs_le hd
+      have hexp_d : Real.exp d ≤ Real.exp ε := Real.exp_le_exp.mpr hd_le
+      have hhead : Real.exp (y + d - m) = Real.exp (y - m) * Real.exp d := by
+        rw [← Real.exp_add]; ring_nf
+      have hhead_le : Real.exp (y + d - m) ≤ Real.exp ε * Real.exp (y - m) := by
+        rw [hhead]
+        have hy_nn : 0 ≤ Real.exp (y - m) := (Real.exp_pos _).le
+        calc Real.exp (y - m) * Real.exp d
+            ≤ Real.exp (y - m) * Real.exp ε :=
+              mul_le_mul_of_nonneg_left hexp_d hy_nn
+          _ = Real.exp ε * Real.exp (y - m) := by ring
+      have hsum_nn : 0 ≤ expShiftSum m ys := expShiftSum_nonneg m ys
+      have hexp_nn : 0 ≤ Real.exp ε := (Real.exp_pos _).le
+      nlinarith [htail, hhead_le]
+
+/-- Lower bound on `expShiftSum` over a perturbed list: each perturbation
+    `δᵢ` deflates its term by at most `Real.exp (-ε)`. -/
+private theorem expShiftSum_zipWith_ge_mul_exp
+    {m ε : ℝ} {xs deltas : List ℝ}
+    (hlen : xs.length = deltas.length)
+    (hbound : ∀ d ∈ deltas, |d| ≤ ε) :
+    Real.exp (-ε) * expShiftSum m xs ≤ expShiftSum m (xs.zipWith (· + ·) deltas) := by
+  induction xs generalizing deltas with
+  | nil =>
+    simp [expShiftSum_nil, List.zipWith]
+  | cons y ys ih =>
+    cases deltas with
+    | nil => simp at hlen
+    | cons d ds =>
+      simp only [List.zipWith_cons_cons, expShiftSum_cons]
+      have hlen' : ys.length = ds.length := by
+        simpa [List.length_cons] using hlen
+      have hbound_tail : ∀ b ∈ ds, |b| ≤ ε := fun b hb =>
+        hbound b (List.mem_cons_of_mem _ hb)
+      have htail := ih hlen' hbound_tail
+      have hd : |d| ≤ ε := hbound d (List.mem_cons_self)
+      have hd_ge : -ε ≤ d := neg_le_of_abs_le hd
+      have hexp_d : Real.exp (-ε) ≤ Real.exp d := Real.exp_le_exp.mpr hd_ge
+      have hhead : Real.exp (y + d - m) = Real.exp (y - m) * Real.exp d := by
+        rw [← Real.exp_add]; ring_nf
+      have hhead_ge : Real.exp (-ε) * Real.exp (y - m) ≤ Real.exp (y + d - m) := by
+        rw [hhead]
+        have hy_nn : 0 ≤ Real.exp (y - m) := (Real.exp_pos _).le
+        calc Real.exp (-ε) * Real.exp (y - m)
+            = Real.exp (y - m) * Real.exp (-ε) := by ring
+          _ ≤ Real.exp (y - m) * Real.exp d :=
+              mul_le_mul_of_nonneg_left hexp_d hy_nn
+      have hsum_nn : 0 ≤ expShiftSum m ys := expShiftSum_nonneg m ys
+      have hexp_nn : 0 ≤ Real.exp (-ε) := (Real.exp_pos _).le
+      nlinarith [htail, hhead_ge]
+
+/-- For `ε ≥ 0`, `Real.exp ε - 1 ≤ ε · Real.exp ε`. Equivalently,
+    `1 - ε ≤ Real.exp (-ε)`, which is `Real.add_one_le_exp (-ε)`. -/
+private theorem exp_sub_one_le_mul_exp {ε : ℝ} (hε : 0 ≤ ε) :
+    Real.exp ε - 1 ≤ ε * Real.exp ε := by
+  have h := Real.add_one_le_exp (-ε)
+  -- h : -ε + 1 ≤ Real.exp (-ε)
+  have hexp_pos : 0 < Real.exp ε := Real.exp_pos _
+  have hprod : Real.exp ε * Real.exp (-ε) = 1 := by
+    rw [← Real.exp_add]; simp
+  -- Multiply h by Real.exp ε (positive) to get:
+  -- (-ε + 1) * Real.exp ε ≤ Real.exp ε * Real.exp (-ε) = 1.
+  have hmul : (-ε + 1) * Real.exp ε ≤ Real.exp ε * Real.exp (-ε) := by
+    have := mul_le_mul_of_nonneg_left h hexp_pos.le
+    -- this : Real.exp ε * (-ε + 1) ≤ Real.exp ε * Real.exp (-ε)
+    linarith [this, mul_comm (Real.exp ε) (-ε + 1)]
+  rw [hprod] at hmul
+  -- hmul : (-ε + 1) * Real.exp ε ≤ 1
+  nlinarith [hmul]
+
 /-- Target: softmax entry is Lipschitz in the logit with constant at most 2
     under `L∞` perturbation. Used to bound the effect of K-cache quantization
-    on attention scores via composition with `Q · δK` bound.
-
-    Proof plan (TODO): shift both logit lists to the same reference, expand
-    `exp(xᵢ + δᵢ) = exp(xᵢ) · exp(δᵢ)` with `exp(δᵢ) ∈ [exp(-ε), exp(ε)]`, then
-    bound the ratio `(softmax perturbed)/(softmax original)` by
-    `exp(2ε)` (numerator up, denominator down). Use `exp(2ε) - 1 ≤ 2ε · exp(2ε)`
-    and `softmaxEntry ≤ 1` to conclude. -/
+    on attention scores via composition with `Q · δK` bound. -/
 theorem softmaxEntry_lipschitz
     (m : ℝ) (xs deltas : List ℝ)
     (hlen : xs.length = deltas.length)
@@ -317,14 +417,353 @@ theorem softmaxEntry_lipschitz
     |softmaxEntry m xs x -
       softmaxEntry m (xs.zipWith (· + ·) deltas) x| ≤
       2 * ε * Real.exp (2 * ε) := by
-  sorry
+  -- m ∈ xs? We only have hmax (x ≤ m for x ∈ xs) and hx : x ∈ xs. We use hx to
+  -- get positivity of the original sum; for the perturbed sum we use the lower
+  -- bound via `Real.exp (-ε) · S`.
+  set S : ℝ := expShiftSum m xs with hS_def
+  set S' : ℝ := expShiftSum m (xs.zipWith (· + ·) deltas) with hS'_def
+  set e : ℝ := Real.exp (x - m) with he_def
+  have he_pos : 0 < e := Real.exp_pos _
+  have he_nn : 0 ≤ e := he_pos.le
+  -- Positivity of S from x ∈ xs.
+  have hS_pos : 0 < S := by
+    have hterm : 0 < Real.exp (x - m) := Real.exp_pos _
+    have hterm_le : Real.exp (x - m) ≤ expShiftSum m xs :=
+      exp_shift_mem_le_expShiftSum hx
+    linarith
+  -- Bounds on S' via helper lemmas.
+  have hexp_ε_pos : 0 < Real.exp ε := Real.exp_pos _
+  have hexp_negε_pos : 0 < Real.exp (-ε) := Real.exp_pos _
+  have hS'_upper : S' ≤ Real.exp ε * S :=
+    expShiftSum_zipWith_le_mul_exp hlen hbound
+  have hS'_lower : Real.exp (-ε) * S ≤ S' :=
+    expShiftSum_zipWith_ge_mul_exp hlen hbound
+  have hS'_pos : 0 < S' := by
+    have : 0 < Real.exp (-ε) * S := mul_pos hexp_negε_pos hS_pos
+    linarith
+  -- Step: e ≤ S (term membership).
+  have he_le_S : e ≤ S := exp_shift_mem_le_expShiftSum hx
+  -- Rewrite the absolute difference as `e * |S' - S| / (S * S')`.
+  have hS_ne : S ≠ 0 := ne_of_gt hS_pos
+  have hS'_ne : S' ≠ 0 := ne_of_gt hS'_pos
+  have hdiff_eq : softmaxEntry m xs x - softmaxEntry m (xs.zipWith (· + ·) deltas) x
+      = e * (S' - S) / (S * S') := by
+    unfold softmaxEntry
+    show e / S - e / S' = e * (S' - S) / (S * S')
+    field_simp
+  rw [hdiff_eq]
+  rw [abs_div, abs_mul]
+  have habs_e : |e| = e := abs_of_nonneg he_nn
+  rw [habs_e]
+  have hSS'_pos : 0 < S * S' := mul_pos hS_pos hS'_pos
+  have habs_SS' : |S * S'| = S * S' := abs_of_pos hSS'_pos
+  rw [habs_SS']
+  -- |S' - S| ≤ (exp ε - 1) * S since both Real.exp ε * S - S and S - Real.exp (-ε) * S
+  -- are bounded by (exp ε - 1) * S (using 1 - exp(-ε) ≤ exp ε - 1 for ε ≥ 0).
+  have hexpε_ge_one : 1 ≤ Real.exp ε := by
+    have := Real.add_one_le_exp ε
+    linarith
+  have hexpnegε_le_one : Real.exp (-ε) ≤ 1 := by
+    rw [Real.exp_neg, inv_le_one_iff₀]
+    exact Or.inr hexpε_ge_one
+  have hone_sub_le : 1 - Real.exp (-ε) ≤ Real.exp ε - 1 := by
+    -- Equivalent to Real.exp ε + Real.exp (-ε) ≥ 2, which follows from AM-GM:
+    -- Real.exp ε * Real.exp (-ε) = 1, so a + 1/a ≥ 2.
+    have hprod : Real.exp ε * Real.exp (-ε) = 1 := by
+      rw [← Real.exp_add]; simp
+    nlinarith [sq_nonneg (Real.exp ε - 1), hexp_ε_pos, hexpε_ge_one]
+  have hS'_minus_S_upper : S' - S ≤ (Real.exp ε - 1) * S := by
+    have : S' ≤ Real.exp ε * S := hS'_upper
+    nlinarith
+  have hS_minus_S'_upper : S - S' ≤ (Real.exp ε - 1) * S := by
+    have h1 : S - S' ≤ S - Real.exp (-ε) * S := by linarith
+    have h2 : S - Real.exp (-ε) * S = (1 - Real.exp (-ε)) * S := by ring
+    have h3 : (1 - Real.exp (-ε)) * S ≤ (Real.exp ε - 1) * S := by
+      have hS_nn : 0 ≤ S := hS_pos.le
+      exact mul_le_mul_of_nonneg_right hone_sub_le hS_nn
+    linarith
+  have habs_diff : |S' - S| ≤ (Real.exp ε - 1) * S := by
+    rw [abs_le]
+    refine ⟨?_, hS'_minus_S_upper⟩
+    linarith
+  -- Now bound e * |S' - S| / (S * S') ≤ e * ((exp ε - 1) * S) / (S * S')
+  --    = e * (exp ε - 1) / S'
+  --    ≤ (exp ε - 1) (since e ≤ S ≤ S'/exp(-ε), want e/S' ≤ exp ε, but easier:
+  --      e/S ≤ 1 and S/S' ≤ exp ε so e/S' ≤ exp ε).
+  -- We directly bound:
+  --   e * |S' - S| ≤ e * (exp ε - 1) * S
+  -- and
+  --   S * S' ≥ S * (exp(-ε) * S) = exp(-ε) * S^2
+  -- so the ratio ≤ (exp ε - 1) * exp ε * (e / S) ≤ (exp ε - 1) * exp ε.
+  have hnum_bound : e * |S' - S| ≤ e * ((Real.exp ε - 1) * S) :=
+    mul_le_mul_of_nonneg_left habs_diff he_nn
+  -- We want: e * |S' - S| / (S * S') ≤ (Real.exp ε - 1) * Real.exp ε
+  have hratio_bound : e * |S' - S| / (S * S') ≤ (Real.exp ε - 1) * Real.exp ε := by
+    have hSS'_ne : S * S' ≠ 0 := ne_of_gt hSS'_pos
+    rw [div_le_iff₀ hSS'_pos]
+    -- Need: e * |S' - S| ≤ (Real.exp ε - 1) * Real.exp ε * (S * S')
+    calc e * |S' - S|
+        ≤ e * ((Real.exp ε - 1) * S) := hnum_bound
+      _ ≤ S * ((Real.exp ε - 1) * S) := by
+            have hcoef_nn : 0 ≤ (Real.exp ε - 1) * S := by
+              have : 0 ≤ Real.exp ε - 1 := by linarith
+              exact mul_nonneg this hS_pos.le
+            exact mul_le_mul_of_nonneg_right he_le_S hcoef_nn
+      _ = (Real.exp ε - 1) * (S * S) := by ring
+      _ ≤ (Real.exp ε - 1) * (Real.exp ε * (S * S')) := by
+            have hexp_sub_nn : 0 ≤ Real.exp ε - 1 := by linarith
+            have hSS_le : S * S ≤ Real.exp ε * (S * S') := by
+              -- S ≤ exp ε * S' / exp(-ε)... simpler: S * S ≤ S * (exp ε * S')
+              -- since S ≤ exp ε * S' (from exp(-ε) * S ≤ S' ⇒ S ≤ S'/exp(-ε) = exp ε * S')
+              have hS_le_expε_S' : S ≤ Real.exp ε * S' := by
+                have h1 : Real.exp (-ε) * S ≤ S' := hS'_lower
+                have h2 : Real.exp ε * (Real.exp (-ε) * S) ≤ Real.exp ε * S' :=
+                  mul_le_mul_of_nonneg_left h1 hexp_ε_pos.le
+                have h3 : Real.exp ε * (Real.exp (-ε) * S) = S := by
+                  have hprod : Real.exp ε * Real.exp (-ε) = 1 := by
+                    rw [← Real.exp_add]; simp
+                  calc Real.exp ε * (Real.exp (-ε) * S)
+                      = (Real.exp ε * Real.exp (-ε)) * S := by ring
+                    _ = 1 * S := by rw [hprod]
+                    _ = S := one_mul S
+                linarith
+              calc S * S ≤ (Real.exp ε * S') * S := by
+                    exact mul_le_mul_of_nonneg_right hS_le_expε_S' hS_pos.le
+                _ = Real.exp ε * (S * S') := by ring
+            exact mul_le_mul_of_nonneg_left hSS_le hexp_sub_nn
+      _ = (Real.exp ε - 1) * Real.exp ε * (S * S') := by ring
+  -- Now chain with (exp ε - 1) * exp ε ≤ ε * exp ε * exp ε = ε * exp (2ε) ≤ 2ε * exp(2ε).
+  have hexp_sub_bound : Real.exp ε - 1 ≤ ε * Real.exp ε := exp_sub_one_le_mul_exp hε
+  have hexp_2ε : Real.exp ε * Real.exp ε = Real.exp (2 * ε) := by
+    rw [← Real.exp_add]; ring_nf
+  have hfinal : (Real.exp ε - 1) * Real.exp ε ≤ 2 * ε * Real.exp (2 * ε) := by
+    have hstep1 : (Real.exp ε - 1) * Real.exp ε ≤ (ε * Real.exp ε) * Real.exp ε :=
+      mul_le_mul_of_nonneg_right hexp_sub_bound hexp_ε_pos.le
+    have hstep2 : (ε * Real.exp ε) * Real.exp ε = ε * Real.exp (2 * ε) := by
+      rw [mul_assoc, hexp_2ε]
+    have hstep3 : ε * Real.exp (2 * ε) ≤ 2 * ε * Real.exp (2 * ε) := by
+      have h2ε_nn : 0 ≤ Real.exp (2 * ε) := (Real.exp_pos _).le
+      nlinarith
+    linarith
+  linarith
 
-/- TODO: `attention_K_sensitivity` — to be stated once Q/K matrix
-   abstractions and Cauchy-Schwarz composition are wired in. Combining
-   `softmaxEntry_lipschitz` with Cauchy-Schwarz on `Q · δK`, the attention
-   score perturbation is bounded by `‖Q‖₂ · ‖δK‖₂`, giving the attention
-   output a linear (not exp-amplified) dependence on K-cache quantization
-   error, matching the V-Lipschitz result. -/
+/-- If every element of `xs` maps to a value `≤ C` (with `C ≥ 0`), then the
+    total `(xs.map f).sum` is bounded by `xs.length · C`. -/
+private theorem sum_map_le_length_mul {xs : List ℝ} {f : ℝ → ℝ} {C : ℝ}
+    (hC : 0 ≤ C) (hbound : ∀ x ∈ xs, f x ≤ C) :
+    (xs.map f).sum ≤ (xs.length : ℝ) * C := by
+  induction xs with
+  | nil => simp
+  | cons y ys ih =>
+    have hy : f y ≤ C := hbound y (List.mem_cons_self)
+    have hys : ∀ x ∈ ys, f x ≤ C := fun x hx =>
+      hbound x (List.mem_cons_of_mem _ hx)
+    have htail := ih hys
+    simp only [List.map_cons, List.sum_cons, List.length_cons, Nat.cast_add,
+      Nat.cast_one]
+    have : f y + (ys.map f).sum ≤ C + (ys.length : ℝ) * C := add_le_add hy htail
+    linarith
+
+/-- L1 aggregate of `softmaxEntry_lipschitz`: summed over all entries, the
+    total variation of softmax under logit perturbation is bounded linearly in
+    the list length times the per-entry bound. -/
+theorem softmax_l1_lipschitz
+    (m : ℝ) (xs deltas : List ℝ)
+    (hlen : xs.length = deltas.length)
+    {ε : ℝ} (hε : 0 ≤ ε)
+    (hbound : ∀ d ∈ deltas, |d| ≤ ε)
+    (hmax : ∀ y ∈ xs, y ≤ m) :
+    (xs.map (fun x =>
+        |softmaxEntry m xs x -
+         softmaxEntry m (xs.zipWith (· + ·) deltas) x|)).sum
+      ≤ (xs.length : ℝ) * (2 * ε * Real.exp (2 * ε)) := by
+  have hC_nn : 0 ≤ 2 * ε * Real.exp (2 * ε) := by
+    have h1 : 0 ≤ 2 * ε := by linarith
+    have h2 : 0 ≤ Real.exp (2 * ε) := (Real.exp_pos _).le
+    exact mul_nonneg h1 h2
+  have hentry : ∀ x ∈ xs,
+      |softmaxEntry m xs x -
+        softmaxEntry m (xs.zipWith (· + ·) deltas) x|
+        ≤ 2 * ε * Real.exp (2 * ε) := fun x hx =>
+    softmaxEntry_lipschitz m xs deltas hlen hε hbound hmax hx
+  exact sum_map_le_length_mul hC_nn hentry
+
+/-! ## Attention K-sensitivity (Cauchy-Schwarz composed with softmax Lipschitz)
+
+The attention score `Q · K` is 1-Lipschitz in `K` with constant `‖Q‖₂` by
+Cauchy-Schwarz. Composing with `softmaxEntry_lipschitz` gives that the softmax
+output perturbation under K-cache quantization is bounded linearly (not
+exp-amplified) in `‖Q‖₂ · ‖δK‖₂`, matching the V-Lipschitz result and
+formalizing the anisotropy between score-path (K-cache) and numerator-path
+(P-side) quantization margin. -/
+
+/-- Dot product of two real lists (truncated at the shorter length). -/
+noncomputable def attentionScore (Q K : List ℝ) : ℝ :=
+  ((Q.zip K).map (fun p => p.1 * p.2)).sum
+
+/-- Euclidean (L2) norm of a real list. -/
+noncomputable def vecL2 (xs : List ℝ) : ℝ :=
+  Real.sqrt ((xs.map (fun x => x ^ 2)).sum)
+
+theorem vecL2_nonneg (xs : List ℝ) : 0 ≤ vecL2 xs := Real.sqrt_nonneg _
+
+private theorem sum_sq_nonneg (xs : List ℝ) : 0 ≤ (xs.map (fun x => x ^ 2)).sum :=
+  List.sum_nonneg fun _ hx => by
+    rcases List.mem_map.mp hx with ⟨y, _, rfl⟩; exact sq_nonneg y
+
+/-- Discriminant identity: for lists of equal length,
+    `Σ (qᵢ − t·kᵢ)² = Σqᵢ² − 2t·Σqᵢkᵢ + t²·Σkᵢ²`. -/
+private theorem sum_sq_sub_mul (Q K : List ℝ) (t : ℝ)
+    (hlen : Q.length = K.length) :
+    ((Q.zip K).map (fun p => (p.1 - t * p.2) ^ 2)).sum =
+      (Q.map (fun x => x ^ 2)).sum -
+        2 * t * ((Q.zip K).map (fun p => p.1 * p.2)).sum +
+        t ^ 2 * (K.map (fun x => x ^ 2)).sum := by
+  induction Q generalizing K with
+  | nil =>
+    cases K with
+    | nil => simp
+    | cons k ks => simp at hlen
+  | cons q qs ih =>
+    cases K with
+    | nil => simp at hlen
+    | cons k ks =>
+      have hlen' : qs.length = ks.length := by
+        simpa [List.length_cons] using hlen
+      have htail := ih ks hlen'
+      simp only [List.zip_cons_cons, List.map_cons, List.sum_cons]
+      rw [htail]
+      ring
+
+/-- If the sum of squares of a real list is zero, every element is zero. -/
+private theorem eq_zero_of_sum_sq_eq_zero {xs : List ℝ}
+    (h : (xs.map (fun x => x ^ 2)).sum = 0) : ∀ x ∈ xs, x = 0 := by
+  intro x hx
+  have hx_sq_mem : x ^ 2 ∈ xs.map (fun x => x ^ 2) := List.mem_map.mpr ⟨x, hx, rfl⟩
+  have hnn : ∀ y ∈ xs.map (fun x => x ^ 2), 0 ≤ y := by
+    intro y hy
+    rcases List.mem_map.mp hy with ⟨z, _, rfl⟩
+    exact sq_nonneg z
+  have : x ^ 2 = 0 :=
+    le_antisymm (h ▸ List.single_le_sum hnn _ hx_sq_mem)
+      (sq_nonneg x)
+  exact pow_eq_zero_iff (n := 2) (by norm_num) |>.mp this
+
+/-- If every `kᵢ = 0`, then `attentionScore Q K = 0`. -/
+private theorem attentionScore_eq_zero_of_K_zero (Q K : List ℝ)
+    (hK : ∀ k ∈ K, k = 0) : attentionScore Q K = 0 := by
+  unfold attentionScore
+  apply List.sum_eq_zero
+  intro p hp
+  rcases List.mem_map.mp hp with ⟨⟨q, k⟩, hpair, rfl⟩
+  have hk_mem : k ∈ K := (List.of_mem_zip hpair).2
+  simp [hK k hk_mem]
+
+/-- `(Σ qᵢkᵢ)² ≤ (Σ qᵢ²) · (Σ kᵢ²)` for equal-length real lists. -/
+private theorem attentionScore_sq_le (Q K : List ℝ)
+    (hlen : Q.length = K.length) :
+    (attentionScore Q K) ^ 2 ≤
+      (Q.map (fun x => x ^ 2)).sum * (K.map (fun x => x ^ 2)).sum := by
+  set A : ℝ := (Q.map (fun x => x ^ 2)).sum with hA_def
+  set B : ℝ := (K.map (fun x => x ^ 2)).sum with hB_def
+  set C : ℝ := attentionScore Q K with hC_def
+  have hA_nn : 0 ≤ A := sum_sq_nonneg Q
+  have hB_nn : 0 ≤ B := sum_sq_nonneg K
+  -- For every t : ℝ, A - 2tC + t²B ≥ 0.
+  have hC_unfold : C = ((Q.zip K).map (fun p => p.1 * p.2)).sum := rfl
+  have hpoly : ∀ t : ℝ, 0 ≤ A - 2 * t * C + t ^ 2 * B := by
+    intro t
+    have hsum_nn :
+        0 ≤ ((Q.zip K).map (fun p => (p.1 - t * p.2) ^ 2)).sum :=
+      List.sum_nonneg fun y hy => by
+        rcases List.mem_map.mp hy with ⟨p, _, rfl⟩; exact sq_nonneg _
+    have hident := sum_sq_sub_mul Q K t hlen
+    rw [← hA_def, ← hB_def, ← hC_unfold] at hident
+    linarith [hsum_nn, hident]
+  rcases eq_or_lt_of_le hB_nn with hB0 | hBpos
+  · -- B = 0 ⇒ all kᵢ = 0 ⇒ C = 0.
+    have hBzero : B = 0 := hB0.symm
+    have hall_k : ∀ k ∈ K, k = 0 := eq_zero_of_sum_sq_eq_zero hBzero
+    have hC0 : C = 0 := attentionScore_eq_zero_of_K_zero Q K hall_k
+    rw [hC0, hBzero]
+    simp
+  · -- B > 0: plug t = C / B.
+    have hB_ne : B ≠ 0 := ne_of_gt hBpos
+    have hpoly_cB := hpoly (C / B)
+    -- hpoly_cB : 0 ≤ A - 2*(C/B)*C + (C/B)^2 * B
+    have hsimp : A - 2 * (C / B) * C + (C / B) ^ 2 * B = A - C ^ 2 / B := by
+      field_simp
+      ring
+    rw [hsimp] at hpoly_cB
+    -- hpoly_cB : 0 ≤ A - C^2 / B, so C^2 ≤ A*B (using B > 0).
+    have h1 : C ^ 2 / B ≤ A := by linarith
+    have := (div_le_iff₀ hBpos).mp h1
+    linarith
+
+/-- Cauchy-Schwarz on lists: `|Q · K| ≤ ‖Q‖₂ · ‖K‖₂`. -/
+theorem attentionScore_cauchy_schwarz (Q K : List ℝ)
+    (hlen : Q.length = K.length) :
+    |attentionScore Q K| ≤ vecL2 Q * vecL2 K := by
+  set A : ℝ := (Q.map (fun x => x ^ 2)).sum with hA_def
+  set B : ℝ := (K.map (fun x => x ^ 2)).sum with hB_def
+  have hA_nn : 0 ≤ A := sum_sq_nonneg Q
+  have hB_nn : 0 ≤ B := sum_sq_nonneg K
+  have hC_sq : (attentionScore Q K) ^ 2 ≤ A * B :=
+    attentionScore_sq_le Q K hlen
+  -- |C| = √(C²) ≤ √(A·B) = √A · √B.
+  have habs_sq : |attentionScore Q K| = Real.sqrt ((attentionScore Q K) ^ 2) := by
+    rw [Real.sqrt_sq_eq_abs]
+  rw [habs_sq]
+  have hAB_nn : 0 ≤ A * B := mul_nonneg hA_nn hB_nn
+  calc Real.sqrt ((attentionScore Q K) ^ 2)
+      ≤ Real.sqrt (A * B) := Real.sqrt_le_sqrt hC_sq
+    _ = Real.sqrt A * Real.sqrt B := Real.sqrt_mul hA_nn _
+    _ = vecL2 Q * vecL2 K := rfl
+
+/-- Attention K-sensitivity: a K-cache perturbation with per-key L2 bound `εK`
+    induces softmax output perturbation at most `2·(‖Q‖₂·εK)·exp(2·(‖Q‖₂·εK))`.
+    Composes Cauchy-Schwarz on `Q · δK` with `softmaxEntry_lipschitz`.
+
+    This is the formal counterpart of the V-cache 1-Lipschitz bound: error
+    propagates linearly (without exp-scale amplification), matching the
+    empirical observation that KV-cache quantization margin is an order of
+    magnitude less sensitive to scale than the P-side margin. -/
+theorem attention_K_sensitivity
+    (Q : List ℝ) (Ks δKs : List (List ℝ)) (m : ℝ)
+    (hlen : Ks.length = δKs.length)
+    (hdimδ : ∀ dK ∈ δKs, Q.length = dK.length)
+    {εK : ℝ} (hεK : 0 ≤ εK)
+    (hbound : ∀ dK ∈ δKs, vecL2 dK ≤ εK)
+    (hmax : ∀ s ∈ Ks.map (attentionScore Q), s ≤ m)
+    {K : List ℝ} (hK : K ∈ Ks) :
+    |softmaxEntry m (Ks.map (attentionScore Q)) (attentionScore Q K) -
+      softmaxEntry m
+        ((Ks.map (attentionScore Q)).zipWith (· + ·)
+          (δKs.map (attentionScore Q)))
+        (attentionScore Q K)| ≤
+      2 * (vecL2 Q * εK) * Real.exp (2 * (vecL2 Q * εK)) := by
+  -- Apply softmaxEntry_lipschitz with xs := Ks.map (attentionScore Q),
+  -- deltas := δKs.map (attentionScore Q), ε := vecL2 Q * εK.
+  set xs : List ℝ := Ks.map (attentionScore Q) with hxs_def
+  set deltas : List ℝ := δKs.map (attentionScore Q) with hdeltas_def
+  set ε : ℝ := vecL2 Q * εK with hε_def
+  have hlen' : xs.length = deltas.length := by
+    simp [hxs_def, hdeltas_def, List.length_map, hlen]
+  have hQ_nn : 0 ≤ vecL2 Q := vecL2_nonneg Q
+  have hε_nn : 0 ≤ ε := mul_nonneg hQ_nn hεK
+  have hbound' : ∀ d ∈ deltas, |d| ≤ ε := by
+    intro d hd
+    rcases List.mem_map.mp hd with ⟨dK, hdK_mem, rfl⟩
+    have hQ_dK_len : Q.length = dK.length := hdimδ dK hdK_mem
+    -- |attentionScore Q dK| ≤ vecL2 Q * vecL2 dK ≤ vecL2 Q * εK = ε.
+    have hCS := attentionScore_cauchy_schwarz Q dK hQ_dK_len
+    have hbd : vecL2 dK ≤ εK := hbound dK hdK_mem
+    have hmul : vecL2 Q * vecL2 dK ≤ vecL2 Q * εK :=
+      mul_le_mul_of_nonneg_left hbd hQ_nn
+    exact le_trans hCS hmul
+  have hx_mem : attentionScore Q K ∈ xs :=
+    List.mem_map.mpr ⟨K, hK, rfl⟩
+  exact softmaxEntry_lipschitz m xs deltas hlen' hε_nn hbound' hmax hx_mem
 
 /-! ## Attention anisotropy: V-cache perturbations propagate linearly
 
