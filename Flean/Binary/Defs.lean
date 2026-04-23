@@ -78,6 +78,17 @@ def binarySpec8_e5m2 : BinarySpec where
   hExp := by omega
   hSig := by omega
 
+/-- FP4 E2M1 spec: 2-bit exponent, 1-bit significand, bias 1.
+    Used by NVIDIA Blackwell / MXFP4 / OCP MX for low-precision attention and GEMM.
+    IEEE-style `.toFormat` view: emin = -1, minNormal = 2^(-1), emax = 1. The OCP
+    FN convention extends emax by one (max finite = 6 instead of 3); underflow
+    analysis is identical. -/
+def binarySpec4_e2m1 : BinarySpec where
+  expWidth := 2
+  sigWidth := 1
+  hExp := by omega
+  hSig := by omega
+
 /-- A packed IEEE 754 floating-point value as a bit vector. -/
 structure FloatBits (spec : BinarySpec) where
   /-- The raw bit representation. -/
@@ -158,6 +169,10 @@ def BinarySpec.toFormat (spec : BinarySpec) : FloatFormat where
     have hbias : 1 ≤ (spec.bias : Int) := by exact_mod_cast show 1 ≤ spec.bias from by unfold bias; omega
     have := spec.hSig
     omega
+
+@[simp] theorem binarySpec4_e2m1_toFormat :
+    binarySpec4_e2m1.toFormat = binary4_e2m1 := by
+  rfl
 
 /-- Decode a finite floating-point bit pattern into (sign, biased_exp, significand).
     For subnormals, IEEE 754 uses the minimum exponent (biased value 1),

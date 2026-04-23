@@ -74,6 +74,17 @@ def binary128 : FloatFormat where
   hprec := by omega
   hexp := by omega
 
+/-- FP4 E2M1 in the IEEE-style view used by `BinarySpec.toFormat`:
+    1 sign + 2 exponent + 1 significand bit, with `emin = -1` and `emax = 1`. -/
+def binary4_e2m1 : FloatFormat where
+  β := 2
+  prec := 2
+  emin := -1
+  emax := 1
+  hβ := by omega
+  hprec := by omega
+  hexp := by omega
+
 /-- IEEE 754 decimal32: radix-10 with precision 7 and exponent range [-95, 96]. -/
 def decimal32 : FloatFormat where
   β := 10

@@ -698,6 +698,24 @@ theorem FloatBits.ofRealOrInfSigned_classify_of_not_isBitRepresentable
 
 /-! ## FP8 concrete underflow thresholds -/
 
+private theorem minNormal_toFormat_of_emin_eq (spec : BinarySpec) {e : ℤ}
+    (h : spec.toFormat.emin = e) :
+    minNormal spec.toFormat = (2 : ℝ) ^ e := by
+  unfold minNormal
+  rw [h]
+  rfl
+
+private theorem halfMinNormal_toFormat_of_emin_eq (spec : BinarySpec) {e : ℤ}
+    (h : spec.toFormat.emin = e) :
+    minNormal spec.toFormat / 2 = (2 : ℝ) ^ (e - 1) := by
+  rw [minNormal_toFormat_of_emin_eq spec h]
+  have hs : e - 1 + 1 = e := by omega
+  calc
+    (2 : ℝ) ^ e / 2 = (2 : ℝ) ^ (e - 1 + 1) / 2 := by rw [hs]
+    _ = ((2 : ℝ) ^ (e - 1) * 2) / 2 := by
+      rw [zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_one]
+    _ = (2 : ℝ) ^ (e - 1) := by ring
+
 theorem emin_binarySpec8_e4m3 :
     binarySpec8_e4m3.toFormat.emin = (-9 : ℤ) := by
   unfold BinarySpec.toFormat binarySpec8_e4m3 BinarySpec.bias
@@ -710,30 +728,36 @@ theorem emin_binarySpec8_e5m2 :
 
 theorem minNormal_binarySpec8_e4m3 :
     minNormal binarySpec8_e4m3.toFormat = (2 : ℝ) ^ (-9 : ℤ) := by
-  unfold minNormal
-  rw [emin_binarySpec8_e4m3]
-  rfl
+  exact minNormal_toFormat_of_emin_eq binarySpec8_e4m3 emin_binarySpec8_e4m3
 
 theorem minNormal_binarySpec8_e5m2 :
     minNormal binarySpec8_e5m2.toFormat = (2 : ℝ) ^ (-16 : ℤ) := by
-  unfold minNormal
-  rw [emin_binarySpec8_e5m2]
-  rfl
+  exact minNormal_toFormat_of_emin_eq binarySpec8_e5m2 emin_binarySpec8_e5m2
 
 /-- FP8 E4M3 underflow threshold: `exp` values strictly below `2^(-10)` flush to zero. -/
 theorem halfMinNormal_binarySpec8_e4m3 :
     minNormal binarySpec8_e4m3.toFormat / 2 = (2 : ℝ) ^ (-10 : ℤ) := by
-  rw [minNormal_binarySpec8_e4m3]
-  have h : (2 : ℝ) ^ (-9 : ℤ) = (2 : ℝ) ^ (-10 : ℤ) * 2 := by
-    rw [show (-9 : ℤ) = -10 + 1 from rfl, zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_one]
-  rw [h]; ring
+  exact halfMinNormal_toFormat_of_emin_eq binarySpec8_e4m3 emin_binarySpec8_e4m3
 
 /-- FP8 E5M2 underflow threshold: `exp` values strictly below `2^(-17)` flush to zero. -/
 theorem halfMinNormal_binarySpec8_e5m2 :
     minNormal binarySpec8_e5m2.toFormat / 2 = (2 : ℝ) ^ (-17 : ℤ) := by
-  rw [minNormal_binarySpec8_e5m2]
-  have h : (2 : ℝ) ^ (-16 : ℤ) = (2 : ℝ) ^ (-17 : ℤ) * 2 := by
-    rw [show (-16 : ℤ) = -17 + 1 from rfl, zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_one]
-  rw [h]; ring
+  exact halfMinNormal_toFormat_of_emin_eq binarySpec8_e5m2 emin_binarySpec8_e5m2
+
+/-! ## FP4 E2M1 concrete underflow threshold -/
+
+theorem emin_binarySpec4_e2m1 :
+    binarySpec4_e2m1.toFormat.emin = (-1 : ℤ) := by
+  unfold BinarySpec.toFormat binarySpec4_e2m1 BinarySpec.bias
+  decide
+
+theorem minNormal_binarySpec4_e2m1 :
+    minNormal binarySpec4_e2m1.toFormat = (2 : ℝ) ^ (-1 : ℤ) := by
+  exact minNormal_toFormat_of_emin_eq binarySpec4_e2m1 emin_binarySpec4_e2m1
+
+/-- FP4 E2M1 underflow threshold: `exp` values strictly below `2^(-2)` flush to zero. -/
+theorem halfMinNormal_binarySpec4_e2m1 :
+    minNormal binarySpec4_e2m1.toFormat / 2 = (2 : ℝ) ^ (-2 : ℤ) := by
+  exact halfMinNormal_toFormat_of_emin_eq binarySpec4_e2m1 emin_binarySpec4_e2m1
 
 end Flean

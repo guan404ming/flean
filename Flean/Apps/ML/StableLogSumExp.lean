@@ -1,5 +1,6 @@
 import Mathlib.Data.List.MinMax
 import Flean.Apps.Compensated.ChunkedKahan
+import Flean.Binary.Properties
 
 /-!
 # Flean.Apps.ML.StableLogSumExp
@@ -878,6 +879,50 @@ theorem stableRoundedLogSumExpBlocks_main_of_contract
   exact stableRoundedLogSumExpBlocks_main (M := M) (fmt := fmt) hβ hin hpos
 
 end StableLSEModel
+
+/-! ## FP4 E2M1 concrete corollaries
+
+For NVIDIA Blackwell / MXFP4 / OCP MX FP4 E2M1 attention, `minNormal = 2^(-1)` so
+`log(minNormal) = -log 2` and `log(minNormal/2) = -2·log 2`. Specializing the
+generic safe-offset and underflow lemmas yields two quantitative certificates
+that match the empirical sweet spot observed in `exp/simulate_fp8.py`.
+-/
+
+private theorem log_two_zpow_neg_one : Real.log ((2 : ℝ) ^ (-1 : ℤ)) = -Real.log 2 := by
+  have h : ((2 : ℝ) ^ (-1 : ℤ)) = (2 : ℝ)⁻¹ := by norm_num
+  rw [h, Real.log_inv]
+
+private theorem log_two_zpow_neg_two : Real.log ((2 : ℝ) ^ (-2 : ℤ)) = -(2 * Real.log 2) := by
+  have h : ((2 : ℝ) ^ (-2 : ℤ)) = ((2 : ℝ) ^ (2 : ℕ))⁻¹ := by norm_num
+  rw [h, Real.log_inv, Real.log_pow]
+  push_cast; ring
+
+/-- **FP4 E2M1 safe-offset certificate**. If the logit spread is at most `Δ` and
+the pre-exp offset `k` satisfies `k - Δ ≥ -log 2`, then no entry in the block
+underflows in FP4 E2M1. Concrete threshold: the offset must cover the spread
+within a factor of two. -/
+theorem roundedShiftedExp_no_underflow_fp4_e2m1
+    {m k Δ : ℝ} {xs : List ℝ}
+    (hbound : ∀ x ∈ xs, m - Δ ≤ x)
+    (hsafe : -Real.log 2 ≤ k - Δ) :
+    ∀ x ∈ xs, roundedExp binarySpec4_e2m1.toFormat (x - m + k) ≠ 0 := by
+  apply roundedShiftedExp_no_underflow_of_safe_offset _ hbound
+  rw [minNormal_binarySpec4_e2m1, log_two_zpow_neg_one]
+  exact hsafe
+
+/-- **FP4 E2M1 underflow trigger**. If some logit's shifted value falls strictly
+below `-2·log 2`, that entry must flush to zero in FP4 E2M1. Complements the
+safe-offset certificate: between the two thresholds `-2·log 2 ≤ k - Δ < -log 2`
+underflow is possible but not guaranteed, quantifying the tight zone. -/
+theorem roundedShiftedExp_some_underflow_fp4_e2m1
+    {m k : ℝ} {xs : List ℝ}
+    (htail : ∃ x ∈ xs, x - m + k < -(2 * Real.log 2)) :
+    ∃ x ∈ xs, roundedExp binarySpec4_e2m1.toFormat (x - m + k) = 0 := by
+  apply roundedShiftedExp_some_underflow_of_logit_tail
+  obtain ⟨x, hx, hlow⟩ := htail
+  refine ⟨x, hx, ?_⟩
+  rw [halfMinNormal_binarySpec4_e2m1, log_two_zpow_neg_two]
+  exact hlow
 
 /-- Default model instance matching the existing case-study definitions:
 `exp`/`log` are interpreted by `Real.exp`/`Real.log` and rounded by `roundNNE`. -/

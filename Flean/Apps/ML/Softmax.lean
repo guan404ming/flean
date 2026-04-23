@@ -1,4 +1,5 @@
 import Flean.Apps.ML.StableLogSumExp
+import Flean.Binary.Properties
 
 /-!
 # Flean.Apps.ML.Softmax
@@ -284,6 +285,133 @@ theorem softmax_entry_times_provable_p_scale_le_maxFinite
         exact mul_nonneg hmax_pos.le hden_pos.le
     _ = maxFinite fmt := by field_simp
 
+/-! ## Softmax Lipschitz bound (foundation for K-cache error analysis)
+
+The single-entry softmax on a list: `softmaxEntry m xs x = exp(x - m) / ∑ exp(xᵢ - m)`.
+This is the target of the tight Lipschitz bound needed to propagate K-cache
+quantization error through the attention score pathway. The L∞ sensitivity
+of softmax with respect to its logit input is bounded by `‖Δ‖∞`, giving the
+linear (non-exp) dependence central to the anisotropy theorem.
+-/
+
+/-- Single-entry softmax over the shifted exponential family. -/
+noncomputable def softmaxEntry (m : ℝ) (xs : List ℝ) (x : ℝ) : ℝ :=
+  Real.exp (x - m) / expShiftSum m xs
+
+/-- Target: softmax entry is Lipschitz in the logit with constant at most 2
+    under `L∞` perturbation. Used to bound the effect of K-cache quantization
+    on attention scores via composition with `Q · δK` bound.
+
+    Proof plan (TODO): shift both logit lists to the same reference, expand
+    `exp(xᵢ + δᵢ) = exp(xᵢ) · exp(δᵢ)` with `exp(δᵢ) ∈ [exp(-ε), exp(ε)]`, then
+    bound the ratio `(softmax perturbed)/(softmax original)` by
+    `exp(2ε)` (numerator up, denominator down). Use `exp(2ε) - 1 ≤ 2ε · exp(2ε)`
+    and `softmaxEntry ≤ 1` to conclude. -/
+theorem softmaxEntry_lipschitz
+    (m : ℝ) (xs deltas : List ℝ)
+    (hlen : xs.length = deltas.length)
+    {ε : ℝ} (hε : 0 ≤ ε)
+    (hbound : ∀ d ∈ deltas, |d| ≤ ε)
+    (hmax : ∀ y ∈ xs, y ≤ m)
+    {x : ℝ} (hx : x ∈ xs) :
+    |softmaxEntry m xs x -
+      softmaxEntry m (xs.zipWith (· + ·) deltas) x| ≤
+      2 * ε * Real.exp (2 * ε) := by
+  sorry
+
+/- TODO: `attention_K_sensitivity` — to be stated once Q/K matrix
+   abstractions and Cauchy-Schwarz composition are wired in. Combining
+   `softmaxEntry_lipschitz` with Cauchy-Schwarz on `Q · δK`, the attention
+   score perturbation is bounded by `‖Q‖₂ · ‖δK‖₂`, giving the attention
+   output a linear (not exp-amplified) dependence on K-cache quantization
+   error, matching the V-Lipschitz result. -/
+
+/-! ## Attention anisotropy: V-cache perturbations propagate linearly
+
+Unlike softmax-numerator (P-side) quantization where a wrong `max_offset`
+can cause exp-scale amplification of the error (see `roundedShiftedExp_*`
+underflow lemmas), V-cache quantization error propagates through the
+attention output with Lipschitz constant 1. If the attention weights form
+a probability distribution and `V` is perturbed by at most `ε` in `L∞`,
+the attention output `Σᵢ pᵢ · Vᵢ` changes by at most `ε`. This is the
+formal counterpart of the empirical observation that KV-cache quantization
+margin is an order of magnitude less sensitive to scale choice than the
+P-side margin.
+-/
+
+/-- Inner product of a weight list and a value list. -/
+noncomputable def weightedSum (ps xs : List ℝ) : ℝ :=
+  ((ps.zip xs).map (fun p => p.1 * p.2)).sum
+
+@[simp] theorem weightedSum_nil_left (xs : List ℝ) : weightedSum [] xs = 0 := by
+  simp [weightedSum]
+
+@[simp] theorem weightedSum_nil_right (ps : List ℝ) : weightedSum ps [] = 0 := by
+  cases ps <;> simp [weightedSum]
+
+theorem weightedSum_cons (p x : ℝ) (ps xs : List ℝ) :
+    weightedSum (p :: ps) (x :: xs) = p * x + weightedSum ps xs := by
+  simp [weightedSum]
+
+/-- Helper: `|∑ pᵢ · δᵢ| ≤ (∑ pᵢ) · ε` when `pᵢ ≥ 0` and `|δᵢ| ≤ ε`. -/
+private theorem weightedSum_abs_bound
+    {ps deltas : List ℝ}
+    (hnn : ∀ p ∈ ps, 0 ≤ p)
+    {ε : ℝ} (hε : 0 ≤ ε)
+    (hbound : ∀ d ∈ deltas, |d| ≤ ε) :
+    |weightedSum ps deltas| ≤ ps.sum * ε := by
+  induction ps generalizing deltas with
+  | nil => simp [weightedSum]
+  | cons p ps ih =>
+    cases deltas with
+    | nil =>
+      have hp_nn : 0 ≤ p := hnn p (List.mem_cons_self)
+      have hps_nn : ∀ q ∈ ps, 0 ≤ q := fun q hq => hnn q (List.mem_cons_of_mem _ hq)
+      have hsum_nn : 0 ≤ (p :: ps).sum :=
+        List.sum_nonneg fun x hx => by
+          rcases List.mem_cons.mp hx with h | h
+          · exact h ▸ hp_nn
+          · exact hps_nn x h
+      simp [weightedSum_nil_right]
+      exact mul_nonneg hsum_nn hε
+    | cons d ds =>
+      have hp_nn : 0 ≤ p := hnn p (List.mem_cons_self)
+      have hps_nn : ∀ q ∈ ps, 0 ≤ q := fun q hq => hnn q (List.mem_cons_of_mem _ hq)
+      have hds_bound : ∀ d' ∈ ds, |d'| ≤ ε := fun d' hd' =>
+        hbound d' (List.mem_cons_of_mem _ hd')
+      have hd_bound : |d| ≤ ε := hbound d (List.mem_cons_self)
+      have htail := ih hps_nn hds_bound
+      rw [weightedSum_cons]
+      calc |p * d + weightedSum ps ds|
+          ≤ |p * d| + |weightedSum ps ds| := abs_add_le _ _
+        _ = p * |d| + |weightedSum ps ds| := by rw [abs_mul, abs_of_nonneg hp_nn]
+        _ ≤ p * ε + ps.sum * ε := by
+            apply add_le_add
+            · exact mul_le_mul_of_nonneg_left hd_bound hp_nn
+            · exact htail
+        _ = (p + ps.sum) * ε := by ring
+        _ = (p :: ps).sum * ε := by rw [List.sum_cons]
+
+/-- V-cache perturbation sensitivity: the attention output is 1-Lipschitz in
+    V under `L∞` perturbation. If the attention weights `ps` form a probability
+    distribution (nonneg, sum = 1) and every `V`-perturbation magnitude is
+    bounded by `ε`, then `|∑ pᵢ · δᵢ| ≤ ε`. No exponential amplification.
+
+    Contrast with the P-side: quantizing the softmax numerator with a too-small
+    `max_offset` can zero out tail entries entirely (see `roundedExp_eq_zero_iff`
+    in StableLogSumExp), changing the normalized softmax by an `O(1)` factor
+    rather than `O(ε)`. -/
+theorem attention_V_lipschitz
+    {ps deltas : List ℝ}
+    (hnn : ∀ p ∈ ps, 0 ≤ p)
+    (hsum : ps.sum = 1)
+    {ε : ℝ} (hε : 0 ≤ ε)
+    (hbound : ∀ d ∈ deltas, |d| ≤ ε) :
+    |weightedSum ps deltas| ≤ ε := by
+  have h := weightedSum_abs_bound hnn hε hbound
+  rw [hsum, one_mul] at h
+  exact h
+
 /-! ## Online LSE: block-wise merging equivalent to a static reference max
 
 These lemmas establish that FA-3 / FlashInfer's online softmax recurrence
@@ -335,5 +463,104 @@ theorem onlineLSEMerge_correct (m₁ m₂ : ℝ) (xs₁ xs₂ : List ℝ) :
     onlineLSEMerge (m₁, expShiftSum m₁ xs₁) (m₂, expShiftSum m₂ xs₂) =
       (max m₁ m₂, expShiftSum (max m₁ m₂) (xs₁ ++ xs₂)) := by
   simp only [onlineLSEMerge, onlineLSE_merge_scalar]
+
+/-! ## n-block fold: direct counterpart of FA-3's online softmax loop -/
+
+/-- Fold the online merge over a list of per-block `(m, l)` pairs. Matches the
+    structure of FA-3's consumer mainloop iterating over KV tiles. -/
+noncomputable def onlineLSEFold (init : ℝ × ℝ) (states : List (ℝ × ℝ)) : ℝ × ℝ :=
+  states.foldl onlineLSEMerge init
+
+/-- Joint max across a seed `m₀` and a list of `(block_max, block_content)` pairs. -/
+def blocksMax (m₀ : ℝ) (blocks : List (ℝ × List ℝ)) : ℝ :=
+  blocks.foldl (fun m p => max m p.1) m₀
+
+/-- Concatenated block contents, seeded with `xs₀`. -/
+def blocksFlatten (xs₀ : List ℝ) (blocks : List (ℝ × List ℝ)) : List ℝ :=
+  xs₀ ++ (blocks.map Prod.snd).flatten
+
+theorem blocksMax_nil (m₀ : ℝ) : blocksMax m₀ [] = m₀ := rfl
+
+theorem blocksMax_cons (m₀ : ℝ) (p : ℝ × List ℝ) (ps : List (ℝ × List ℝ)) :
+    blocksMax m₀ (p :: ps) = blocksMax (max m₀ p.1) ps := by
+  simp [blocksMax]
+
+theorem blocksFlatten_nil (xs₀ : List ℝ) : blocksFlatten xs₀ [] = xs₀ := by
+  simp [blocksFlatten]
+
+theorem blocksFlatten_cons (xs₀ : List ℝ) (p : ℝ × List ℝ) (ps : List (ℝ × List ℝ)) :
+    blocksFlatten xs₀ (p :: ps) = blocksFlatten (xs₀ ++ p.2) ps := by
+  simp [blocksFlatten]
+
+/-- Online ↔ static equivalence for arbitrarily many blocks. Folding the per-block
+    `(m_i, expShiftSum m_i xs_i)` states through `onlineLSEMerge` yields the joint
+    max and the static shifted-exp-sum over the concatenated blocks. This is the
+    Lean statement that directly licenses FA-3's online softmax outer loop. -/
+theorem onlineLSEFold_eq_static
+    (m₀ : ℝ) (xs₀ : List ℝ) (blocks : List (ℝ × List ℝ)) :
+    onlineLSEFold (m₀, expShiftSum m₀ xs₀)
+        (blocks.map (fun p => (p.1, expShiftSum p.1 p.2))) =
+      (blocksMax m₀ blocks,
+        expShiftSum (blocksMax m₀ blocks) (blocksFlatten xs₀ blocks)) := by
+  induction blocks generalizing m₀ xs₀ with
+  | nil => simp [onlineLSEFold, blocksMax_nil, blocksFlatten_nil]
+  | cons p ps ih =>
+    simp only [onlineLSEFold, List.map_cons, List.foldl_cons]
+    rw [onlineLSEMerge_correct, blocksMax_cons, blocksFlatten_cons]
+    exact ih (max m₀ p.1) (xs₀ ++ p.2)
+
+/-! ## FP8 concrete-constant corollaries (for paper citation) -/
+
+theorem maxFinite_binarySpec8_e4m3 :
+    maxFinite binarySpec8_e4m3.toFormat = 240 := by
+  unfold maxFinite machineEpsilon BinarySpec.toFormat binarySpec8_e4m3 BinarySpec.bias
+  norm_num
+
+theorem maxFinite_binarySpec8_e5m2 :
+    maxFinite binarySpec8_e5m2.toFormat = 57344 := by
+  unfold maxFinite machineEpsilon BinarySpec.toFormat binarySpec8_e5m2 BinarySpec.bias
+  norm_num
+
+theorem log_minNormal_binarySpec8_e4m3 :
+    Real.log (minNormal binarySpec8_e4m3.toFormat) = -9 * Real.log 2 := by
+  rw [minNormal_binarySpec8_e4m3, Real.log_zpow]
+  push_cast; ring
+
+theorem log_minNormal_binarySpec8_e5m2 :
+    Real.log (minNormal binarySpec8_e5m2.toFormat) = -16 * Real.log 2 := by
+  rw [minNormal_binarySpec8_e5m2, Real.log_zpow]
+  push_cast; ring
+
+/-- Concrete `provable_p_scale` for FP8 E4M3: `240 · (1 + (L-1)·exp(-Δ))`. -/
+theorem provable_p_scale_binarySpec8_e4m3 (L : ℕ) (Δ : ℝ) :
+    provable_p_scale binarySpec8_e4m3.toFormat L Δ =
+      240 * (1 + ((L : ℝ) - 1) * Real.exp (-Δ)) := by
+  rw [provable_p_scale, maxFinite_binarySpec8_e4m3]
+
+/-- Concrete `provable_p_scale` for FP8 E5M2: `57344 · (1 + (L-1)·exp(-Δ))`. -/
+theorem provable_p_scale_binarySpec8_e5m2 (L : ℕ) (Δ : ℝ) :
+    provable_p_scale binarySpec8_e5m2.toFormat L Δ =
+      57344 * (1 + ((L : ℝ) - 1) * Real.exp (-Δ)) := by
+  rw [provable_p_scale, maxFinite_binarySpec8_e5m2]
+
+/-- FP8 E4M3 block-level no-underflow: if `k - Δ ≥ -9 · log 2 ≈ -6.24`, no entry
+    rounds to zero under a shift `m` + pre-exp offset `k`. -/
+theorem roundedShiftedExp_no_underflow_binarySpec8_e4m3
+    {m k Δ : ℝ} {xs : List ℝ}
+    (hbound : ∀ x ∈ xs, m - Δ ≤ x)
+    (hsafe : -9 * Real.log 2 ≤ k - Δ) :
+    ∀ x ∈ xs, roundedExp binarySpec8_e4m3.toFormat (x - m + k) ≠ 0 :=
+  roundedShiftedExp_no_underflow_of_safe_offset (fmt := binarySpec8_e4m3.toFormat) hbound
+    (by rw [log_minNormal_binarySpec8_e4m3]; exact hsafe)
+
+/-- FP8 E5M2 block-level no-underflow: if `k - Δ ≥ -16 · log 2 ≈ -11.09`, no entry
+    rounds to zero under a shift `m` + pre-exp offset `k`. -/
+theorem roundedShiftedExp_no_underflow_binarySpec8_e5m2
+    {m k Δ : ℝ} {xs : List ℝ}
+    (hbound : ∀ x ∈ xs, m - Δ ≤ x)
+    (hsafe : -16 * Real.log 2 ≤ k - Δ) :
+    ∀ x ∈ xs, roundedExp binarySpec8_e5m2.toFormat (x - m + k) ≠ 0 :=
+  roundedShiftedExp_no_underflow_of_safe_offset (fmt := binarySpec8_e5m2.toFormat) hbound
+    (by rw [log_minNormal_binarySpec8_e5m2]; exact hsafe)
 
 end Flean
