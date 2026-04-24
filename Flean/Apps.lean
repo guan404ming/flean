@@ -8,3 +8,4 @@ import Flean.Apps.ML.DotProd
 import Flean.Apps.ML.DotProdBits
 import Flean.Apps.ML.StableLogSumExp
 import Flean.Apps.ML.Softmax
+import Flean.Apps.ML.LayerErrors

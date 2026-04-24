@@ -315,7 +315,7 @@ private theorem exp_shift_mem_le_expShiftSum {m x : ℝ} {xs : List ℝ} (hx : x
 
 /-- Upper bound on `expShiftSum` over a perturbed list: each perturbation
     `δᵢ` inflates its term by at most `Real.exp ε`. -/
-private theorem expShiftSum_zipWith_le_mul_exp
+theorem expShiftSum_zipWith_le_mul_exp
     {m ε : ℝ} {xs deltas : List ℝ}
     (hlen : xs.length = deltas.length)
     (hbound : ∀ d ∈ deltas, |d| ≤ ε) :
@@ -351,7 +351,7 @@ private theorem expShiftSum_zipWith_le_mul_exp
 
 /-- Lower bound on `expShiftSum` over a perturbed list: each perturbation
     `δᵢ` deflates its term by at most `Real.exp (-ε)`. -/
-private theorem expShiftSum_zipWith_ge_mul_exp
+theorem expShiftSum_zipWith_ge_mul_exp
     {m ε : ℝ} {xs deltas : List ℝ}
     (hlen : xs.length = deltas.length)
     (hbound : ∀ d ∈ deltas, |d| ≤ ε) :
@@ -850,6 +850,182 @@ theorem attention_V_lipschitz
   have h := weightedSum_abs_bound hnn hε hbound
   rw [hsum, one_mul] at h
   exact h
+
+/-! ## Attention P-sensitivity: case split on quantization regime
+
+Quantizing the softmax-output probabilities `P` before the `P · V` product
+(the FP8 / FP4 attention kernel pattern) has two qualitatively different
+regimes:
+
+* **No underflow**: each `phᵢ` is within relative error `ε` of `pᵢ`. The
+  attention-output error scales as `ε · ‖V‖∞`, i.e. `O(ε)`.
+* **With underflow**: some `pᵢ` flush to zero
+  (cf. `roundedExp_eq_zero_of_lt_half_minNormal` in `StableLogSumExp`); in the
+  worst case the full probability mass is perturbed, giving an `O(1) · ‖V‖∞`
+  bound.
+
+The combined bound `(q + ε · (M − q)) · ‖V‖∞` (where `q` is the flushed mass
+and `M = ‖p‖₁`) transitions smoothly from `O(ε)` at `q = 0` to `O(1)` at
+`q = M`. This is the formal counterpart of the anisotropy jump across the
+FA-3 / FlashInfer `max_offset` safety boundary in
+`roundedShiftedExp_no_underflow_of_safe_offset`. -/
+
+/-- Core L∞ × L1 inequality for `weightedSum`:
+    `|Σᵢ (pᵢ − phᵢ) · Vᵢ| ≤ (Σᵢ |pᵢ − phᵢ|) · vbd` when every `|Vᵢ| ≤ vbd`. -/
+private theorem weightedSum_sub_linf_bound
+    {ps qs Vs : List ℝ}
+    (hlen1 : ps.length = qs.length)
+    (hlen2 : ps.length = Vs.length)
+    {vbd : ℝ}
+    (hV : ∀ V ∈ Vs, |V| ≤ vbd) :
+    |weightedSum ps Vs - weightedSum qs Vs| ≤
+      (ps.zipWith (fun a b => |a - b|) qs).sum * vbd := by
+  induction ps generalizing qs Vs with
+  | nil =>
+    cases qs with
+    | cons _ _ => simp at hlen1
+    | nil =>
+      cases Vs with
+      | cons _ _ => simp at hlen2
+      | nil =>
+        simp [weightedSum]
+  | cons p pt ih =>
+    cases qs with
+    | nil => simp at hlen1
+    | cons ph qt =>
+      cases Vs with
+      | nil => simp at hlen2
+      | cons V Vt =>
+        have hlen1' : pt.length = qt.length := by
+          simpa [List.length_cons] using hlen1
+        have hlen2' : pt.length = Vt.length := by
+          simpa [List.length_cons] using hlen2
+        have hVt : ∀ v ∈ Vt, |v| ≤ vbd := fun v hv =>
+          hV v (List.mem_cons_of_mem _ hv)
+        have hV0 : |V| ≤ vbd := hV V (List.mem_cons_self)
+        have htail := ih hlen1' hlen2' hVt
+        rw [weightedSum_cons, weightedSum_cons]
+        have hrearrange :
+            p * V + weightedSum pt Vt - (ph * V + weightedSum qt Vt) =
+              (p - ph) * V + (weightedSum pt Vt - weightedSum qt Vt) := by ring
+        rw [hrearrange]
+        have hhead_abs : |(p - ph) * V| ≤ |p - ph| * vbd := by
+          rw [abs_mul]
+          exact mul_le_mul_of_nonneg_left hV0 (abs_nonneg _)
+        calc |(p - ph) * V + (weightedSum pt Vt - weightedSum qt Vt)|
+            ≤ |(p - ph) * V| +
+                |weightedSum pt Vt - weightedSum qt Vt| := abs_add_le _ _
+          _ ≤ |p - ph| * vbd +
+                (pt.zipWith (fun a b => |a - b|) qt).sum * vbd :=
+              add_le_add hhead_abs htail
+          _ = (|p - ph| +
+                (pt.zipWith (fun a b => |a - b|) qt).sum) * vbd := by ring
+          _ = ((p :: pt).zipWith (fun a b => |a - b|) (ph :: qt)).sum * vbd := by
+              simp [List.zipWith_cons_cons, List.sum_cons]
+
+/-- Pointwise relative error `|pᵢ − phᵢ| ≤ ε · pᵢ` lifts to an L1 bound:
+    `Σᵢ |pᵢ − phᵢ| ≤ ε · Σᵢ pᵢ`. Used to derive the `O(ε)` corollary from
+    pointwise hypotheses. -/
+private theorem l1Dist_le_rel_error
+    {ps qs : List ℝ}
+    (hlen : ps.length = qs.length)
+    {ε : ℝ}
+    (hrel : ∀ p ph, (p, ph) ∈ ps.zip qs → |p - ph| ≤ ε * p) :
+    (ps.zipWith (fun a b => |a - b|) qs).sum ≤ ε * ps.sum := by
+  induction ps generalizing qs with
+  | nil =>
+    cases qs with
+    | nil => simp
+    | cons _ _ => simp at hlen
+  | cons p pt ih =>
+    cases qs with
+    | nil => simp at hlen
+    | cons ph qt =>
+      have hlen' : pt.length = qt.length := by
+        simpa [List.length_cons] using hlen
+      have hhead : |p - ph| ≤ ε * p := hrel p ph (by
+        rw [List.zip_cons_cons]
+        exact List.mem_cons_self)
+      have hrelt : ∀ q qh, (q, qh) ∈ pt.zip qt → |q - qh| ≤ ε * q := by
+        intro q qh h
+        exact hrel q qh (by
+          rw [List.zip_cons_cons]
+          exact List.mem_cons_of_mem _ h)
+      have htail := ih hlen' hrelt
+      simp only [List.zipWith_cons_cons, List.sum_cons]
+      calc |p - ph| + (pt.zipWith (fun a b => |a - b|) qt).sum
+          ≤ ε * p + ε * pt.sum := add_le_add hhead htail
+        _ = ε * (p + pt.sum) := by ring
+
+/-- **No-underflow attention P-sensitivity**: under pointwise relative error
+    `|pᵢ − phᵢ| ≤ ε · pᵢ` (the regime guaranteed by
+    `roundedShiftedExp_no_underflow_of_safe_offset` when the FA-3 / FlashInfer
+    `max_offset` is chosen large enough), the attention output error is linear
+    in `ε`. For a probability distribution (`ps.sum = 1`) this is `ε · ‖V‖∞`,
+    matching the empirical `O(ε)` curve in the paper's anisotropy table. -/
+theorem attention_P_sensitivity_no_underflow
+    {ps qs Vs : List ℝ}
+    (hlen1 : ps.length = qs.length)
+    (hlen2 : ps.length = Vs.length)
+    {ε : ℝ}
+    (hrel : ∀ p ph, (p, ph) ∈ ps.zip qs → |p - ph| ≤ ε * p)
+    {vbd : ℝ} (hvbd : 0 ≤ vbd)
+    (hV : ∀ V ∈ Vs, |V| ≤ vbd) :
+    |weightedSum ps Vs - weightedSum qs Vs| ≤ ε * ps.sum * vbd :=
+  calc |weightedSum ps Vs - weightedSum qs Vs|
+      ≤ (ps.zipWith (fun a b => |a - b|) qs).sum * vbd :=
+        weightedSum_sub_linf_bound hlen1 hlen2 hV
+    _ ≤ ε * ps.sum * vbd :=
+        mul_le_mul_of_nonneg_right (l1Dist_le_rel_error hlen1 hrel) hvbd
+
+/-- **With-underflow attention P-sensitivity**: the worst-case bound when some
+    `pᵢ` flush to zero (cf. `roundedShiftedExp_some_underflow_of_logit_tail`).
+    The pointwise hypothesis `|pᵢ − phᵢ| ≤ pᵢ` covers both `phᵢ = 0` (full flush)
+    and `phᵢ ∈ [0, 2pᵢ]` (arbitrary nonneg perturbation). The attention output
+    error is bounded by `‖p‖₁ · ‖V‖∞`, which for a probability distribution is
+    `‖V‖∞`, i.e. `O(1)` — no longer `O(ε)`. -/
+theorem attention_P_sensitivity_with_underflow
+    {ps qs Vs : List ℝ}
+    (hlen1 : ps.length = qs.length)
+    (hlen2 : ps.length = Vs.length)
+    (hbound : ∀ p ph, (p, ph) ∈ ps.zip qs → |p - ph| ≤ p)
+    {vbd : ℝ} (hvbd : 0 ≤ vbd)
+    (hV : ∀ V ∈ Vs, |V| ≤ vbd) :
+    |weightedSum ps Vs - weightedSum qs Vs| ≤ ps.sum * vbd := by
+  have hrel1 : ∀ p ph, (p, ph) ∈ ps.zip qs → |p - ph| ≤ 1 * p := fun p ph h => by
+    simpa [one_mul] using hbound p ph h
+  have hl1 := l1Dist_le_rel_error hlen1 hrel1
+  rw [one_mul] at hl1
+  calc |weightedSum ps Vs - weightedSum qs Vs|
+      ≤ (ps.zipWith (fun a b => |a - b|) qs).sum * vbd :=
+        weightedSum_sub_linf_bound hlen1 hlen2 hV
+    _ ≤ ps.sum * vbd := mul_le_mul_of_nonneg_right hl1 hvbd
+
+/-- **Attention P-sensitivity, case split**: if the L1 distance between the
+    exact and quantized probability vectors is bounded by `q + ε · (M − q)` —
+    where `q` is the total probability mass flushed to zero and the remaining
+    mass `M − q` obeys relative error `ε` (with `M = ps.sum`) — then the
+    attention output error is bounded by `(q + ε · (M − q)) · ‖V‖∞`.
+
+    Setting `q = 0` recovers `attention_P_sensitivity_no_underflow` with bound
+    `ε · M · ‖V‖∞`; setting `q = M` recovers
+    `attention_P_sensitivity_with_underflow` with bound `M · ‖V‖∞`. The smooth
+    transition from `O(ε)` to `O(1)` as `q` grows across the
+    `roundedShiftedExp_no_underflow_of_safe_offset` safety boundary is the
+    formal statement of the paper's P-side anisotropy. -/
+theorem attention_P_sensitivity
+    {ps qs Vs : List ℝ}
+    (hlen1 : ps.length = qs.length)
+    (hlen2 : ps.length = Vs.length)
+    {q ε : ℝ}
+    (hl1 : (ps.zipWith (fun a b => |a - b|) qs).sum ≤ q + ε * (ps.sum - q))
+    {vbd : ℝ} (hvbd : 0 ≤ vbd)
+    (hV : ∀ V ∈ Vs, |V| ≤ vbd) :
+    |weightedSum ps Vs - weightedSum qs Vs| ≤ (q + ε * (ps.sum - q)) * vbd :=
+  calc |weightedSum ps Vs - weightedSum qs Vs|
+      ≤ (ps.zipWith (fun a b => |a - b|) qs).sum * vbd :=
+        weightedSum_sub_linf_bound hlen1 hlen2 hV
+    _ ≤ (q + ε * (ps.sum - q)) * vbd := mul_le_mul_of_nonneg_right hl1 hvbd
 
 /-! ## Online LSE: block-wise merging equivalent to a static reference max
 
